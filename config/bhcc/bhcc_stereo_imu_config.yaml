@@ -1,0 +1,78 @@
+%YAML:1.0
+
+#common parameters
+#support: 1 imu 1 cam; 1 imu 2 cam: 2 cam; 
+imu: 1         
+num_of_cam: 2  
+
+imu_topic: "/ahrs_driver_node/imu_data"
+image0_topic: "/arena_cam_qc2/comb_s0"
+image1_topic: "/arena_cam_qc1/comb_s0"
+polar_topic: "/ahrs_driver_node/polar_mono"
+output_path: "/home/dhz/SLAM/output/VINS-Fusion"
+output_name: "bhcc_11051555_sin"
+
+
+cam0_calib: "TRI050S-spin4.yaml"
+cam1_calib: "TRI050S-spin4.yaml"
+image_width: 612
+image_height: 512
+   
+
+# Extrinsic parameter between IMU and Camera.
+estimate_extrinsic: 1   # 0  Have an accurate extrinsic parameters. We will trust the following imu^R_cam, imu^T_cam, don't change it.
+                        # 1  Have an initial guess about extrinsic parameters. We will optimize around your initial guess.
+# this should be 1
+
+# transfer coordinates from cam to imu0 !!!!!!!
+body_T_cam0: !!opencv-matrix # cam frame to body
+   rows: 4
+   cols: 4
+   dt: d
+   data: [0.99997566,  0.00437766, -0.00543242, -0.08807137,
+          0.00550203, -0.01604921,  0.99985606,  0.02811719,
+          0.00428984, -0.99986162, -0.01607291,  0.00748347,
+          0.,          0.,          0.,          1.        ]
+
+# transfer coordinates from cam to imu0 !!!!!!!
+body_T_cam1: !!opencv-matrix # cam frame to body
+   rows: 4
+   cols: 4
+   dt: d
+   data: [0.99997499, -0.00497565,  0.00502634,  0.01120031,
+         -0.00505015, -0.00478453,  0.9999758,   0.0232537, 
+         -0.00495149, -0.99997618, -0.00480954,  0.00700643,
+          0.,          0.,          0.,          1.        ]
+
+
+#Multiple thread support
+multiple_thread: 1
+
+#feature traker paprameters
+max_cnt: 150            # max feature number in feature tracking
+min_dist: 30            # min distance between two features 
+freq: 10                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
+F_threshold: 1.0        # ransac threshold (pixel)
+show_track: 1           # publish tracking image as topic
+flow_back: 1            # perform forward and backward optical flow to improve feature tracking accuracy
+
+#optimization parameters
+max_solver_time: 0.04  # max solver itration time (ms), to guarantee real time
+max_num_iterations: 8   # max solver itrations, to guarantee real time
+keyframe_parallax: 10.0 # keyframe selection threshold (pixel)
+
+#imu parameters       The more accurate parameters you provide, the better performance
+acc_n: 0.1          # accelerometer measurement noise standard deviation. 
+gyr_n: 0.01         # gyroscope measurement noise standard deviation.     
+acc_w: 0.001        # accelerometer bias random work noise standard deviation.  
+gyr_w: 0.0001       # gyroscope bias random work noise standard deviation.     
+g_norm: 9.81007     # gravity magnitude
+
+#unsynchronization parameters
+estimate_td: 0                      # online estimate time offset between camera and imu
+td: 0.0                             # initial value of time offset. unit: s. readed image clock + td = real image clock (IMU clock)
+
+#loop closure parameters
+load_previous_pose_graph: 0        # load and reuse previous pose graph; load from 'pose_graph_save_path'
+pose_graph_save_path: "/home/dhz/SLAM/output/VINS-Fusion/basic/" # save and load path
+save_image: 0                   # save image in pose graph for visualization prupose; you can close this function by setting 0 
