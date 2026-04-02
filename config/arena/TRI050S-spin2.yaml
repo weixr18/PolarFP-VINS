@@ -1,0 +1,16 @@
+%YAML:1.0
+---
+model_type: PINHOLE
+camera_name: TRI050S-Spin2
+image_width: 1224
+image_height: 1024
+distortion_parameters:
+   k1: -0.105716
+   k2: 0.150371
+   p1: 0.000324
+   p2: -0.002701
+projection_parameters:
+   fx: 1204.79726
+   fy: 1195.06438
+   cx: 610.9901
+   cy: 512.68451

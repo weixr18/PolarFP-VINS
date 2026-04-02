@@ -59,30 +59,46 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
     last_average_parallax = 0;
     new_feature_num = 0;
     long_track_num = 0;
-    for (auto &id_pts : image)
+    ROS_INFO("image.size(): %ld", image.size());
+    for (auto &id_pts : image) // id_pts: pair<feature_id, vector<pair<cam_id, Eigen::Matrix<double, 7, 1>>>>
     {
-        FeaturePerFrame f_per_fra(id_pts.second[0].second, td);
-        assert(id_pts.second[0].first == 0);
-        if(id_pts.second.size() == 2)
-        {
-            f_per_fra.rightObservation(id_pts.second[1].second);
-            assert(id_pts.second[1].first == 1);
+        // 1. construct FeaturePerFrame f_per_fra
+        auto &stereo_obslist = id_pts.second; // vector<pair<cam_id, Eigen::Matrix<double, 7, 1>>>
+        if (stereo_obslist.empty()) {
+            ROS_WARN("Empty feature vector for feature_id: %d, skipping", id_pts.first);
+            continue;
         }
-
+        assert(stereo_obslist[0].first == 0);
+        FeaturePerFrame f_per_fra(stereo_obslist[0].second, td); // construct with main camera
+        // 2. check camera number
+        if(stereo_obslist.size() == 2) {
+            // stereo case, not in use for now.
+            if (stereo_obslist[1].first != 1) {
+            } else {
+                f_per_fra.rightObservation(stereo_obslist[1].second);
+            }
+        }
+        else if (stereo_obslist.size() > 2) {
+            // multi-cameras, should not occur
+            ROS_WARN("Feature_id %d has %lu observations (>2), only using first one",
+                    id_pts.first, stereo_obslist.size());
+        }
+        // 3. add to feature list
         int feature_id = id_pts.first;
-        auto it = find_if(feature.begin(), feature.end(), [feature_id](const FeaturePerId &it)
-                          {
-            return it.feature_id == feature_id;
-                          });
-
-        if (it == feature.end())
-        {
+        auto it = find_if( 
+            feature.begin(), feature.end(), 
+            [feature_id](const FeaturePerId &it) {
+                return it.feature_id == feature_id;
+            }
+        );
+        if (it == feature.end()) {
+            // new point
             feature.push_back(FeaturePerId(feature_id, frame_count));
             feature.back().feature_per_frame.push_back(f_per_fra);
             new_feature_num++;
         }
-        else if (it->feature_id == feature_id)
-        {
+        else if (it->feature_id == feature_id) {
+            // tracking point
             it->feature_per_frame.push_back(f_per_fra);
             last_track_num++;
             if( it-> feature_per_frame.size() >= 4)
@@ -90,13 +106,14 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
         }
     }
 
+    // 4. check parallax
     //if (frame_count < 2 || last_track_num < 20)
     //if (frame_count < 2 || last_track_num < 20 || new_feature_num > 0.5 * last_track_num)
-    if (frame_count < 2 || last_track_num < 20 || long_track_num < 40 || new_feature_num > 0.5 * last_track_num)
+    if (frame_count < 2 || last_track_num < 20 || long_track_num < 40 || 
+        new_feature_num > 0.5 * last_track_num)
         return true;
 
-    for (auto &it_per_id : feature)
-    {
+    for (auto &it_per_id : feature) {
         if (it_per_id.start_frame <= frame_count - 2 &&
             it_per_id.start_frame + int(it_per_id.feature_per_frame.size()) - 1 >= frame_count - 1)
         {
@@ -104,13 +121,10 @@ bool FeatureManager::addFeatureCheckParallax(int frame_count, const map<int, vec
             parallax_num++;
         }
     }
-
-    if (parallax_num == 0)
-    {
+    if (parallax_num == 0) {
         return true;
     }
-    else
-    {
+    else {
         ROS_DEBUG("parallax_sum: %lf, parallax_num: %d", parallax_sum, parallax_num);
         ROS_DEBUG("current parallax: %lf", parallax_sum / parallax_num * FOCAL_LENGTH);
         last_average_parallax = parallax_sum / parallax_num * FOCAL_LENGTH;
@@ -185,11 +199,7 @@ VectorXd FeatureManager::getDepthVector()
         it_per_id.used_num = it_per_id.feature_per_frame.size();
         if (it_per_id.used_num < 4)
             continue;
-#if 1
         dep_vec(++feature_index) = 1. / it_per_id.estimated_depth;
-#else
-        dep_vec(++feature_index) = it_per_id->estimated_depth;
-#endif
     }
     return dep_vec;
 }
@@ -306,46 +316,7 @@ void FeatureManager::triangulate(int frameCnt, Vector3d Ps[], Matrix3d Rs[], Vec
         if (it_per_id.estimated_depth > 0)
             continue;
 
-        if(STEREO && it_per_id.feature_per_frame[0].is_stereo)
-        {
-            int imu_i = it_per_id.start_frame;
-            Eigen::Matrix<double, 3, 4> leftPose;
-            Eigen::Vector3d t0 = Ps[imu_i] + Rs[imu_i] * tic[0];
-            Eigen::Matrix3d R0 = Rs[imu_i] * ric[0];
-            leftPose.leftCols<3>() = R0.transpose();
-            leftPose.rightCols<1>() = -R0.transpose() * t0;
-            //cout << "left pose " << leftPose << endl;
-
-            Eigen::Matrix<double, 3, 4> rightPose;
-            Eigen::Vector3d t1 = Ps[imu_i] + Rs[imu_i] * tic[1];
-            Eigen::Matrix3d R1 = Rs[imu_i] * ric[1];
-            rightPose.leftCols<3>() = R1.transpose();
-            rightPose.rightCols<1>() = -R1.transpose() * t1;
-            //cout << "right pose " << rightPose << endl;
-
-            Eigen::Vector2d point0, point1;
-            Eigen::Vector3d point3d;
-            point0 = it_per_id.feature_per_frame[0].point.head(2);
-            point1 = it_per_id.feature_per_frame[0].pointRight.head(2);
-            //cout << "point0 " << point0.transpose() << endl;
-            //cout << "point1 " << point1.transpose() << endl;
-
-            triangulatePoint(leftPose, rightPose, point0, point1, point3d);
-            Eigen::Vector3d localPoint;
-            localPoint = leftPose.leftCols<3>() * point3d + leftPose.rightCols<1>();
-            double depth = localPoint.z();
-            if (depth > 0)
-                it_per_id.estimated_depth = depth;
-            else
-                it_per_id.estimated_depth = INIT_DEPTH;
-            /*
-            Vector3d ptsGt = pts_gt[it_per_id.feature_id];
-            printf("stereo %d pts: %f %f %f gt: %f %f %f \n",it_per_id.feature_id, point3d.x(), point3d.y(), point3d.z(),
-                                                            ptsGt.x(), ptsGt.y(), ptsGt.z());
-            */
-            continue;
-        }
-        else if(it_per_id.feature_per_frame.size() > 1)
+        if(it_per_id.feature_per_frame.size() > 1)
         {
             int imu_i = it_per_id.start_frame;
             Eigen::Matrix<double, 3, 4> leftPose;

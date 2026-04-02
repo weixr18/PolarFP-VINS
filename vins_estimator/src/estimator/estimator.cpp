@@ -146,8 +146,7 @@ void Estimator::changeSensorType(int use_imu, int use_stereo)
             }
         }
         
-        STEREO = use_stereo;
-        printf("use imu %d use stereo %d\n", USE_IMU, STEREO);
+        printf("use imu: %d \n", USE_IMU);
     }
     mProcess.unlock();
     if(restart)
@@ -167,7 +166,7 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
         featureFrame = featureTracker.trackImage(t, _img);
     else
         featureFrame = featureTracker.trackImage(t, _img, _img1);
-    //printf("featureTracker time: %f\n", featureTrackerTime.toc());
+    // printf("featureTracker time: %f\n", featureTrackerTime.toc());
 
     if (SHOW_TRACK)
     {
@@ -175,8 +174,7 @@ void Estimator::inputImage(double t, const cv::Mat &_img, const cv::Mat &_img1)
         pubTrackImage(imgTrack, t);
     }
     
-    if(MULTIPLE_THREAD)  
-    {     
+    if(MULTIPLE_THREAD)  {     
         if(inputImageCnt % 2 == 0)
         {
             mBuf.lock();
@@ -333,7 +331,7 @@ void Estimator::processMeasurements()
             mProcess.unlock();
         }
 
-        if (! MULTIPLE_THREAD)
+        if (!MULTIPLE_THREAD)
             break;
 
         std::chrono::milliseconds dura(2);
@@ -360,6 +358,7 @@ void Estimator::initFirstIMUPose(vector<pair<double, Eigen::Vector3d>> &accVecto
     R0 = Utility::ypr2R(Eigen::Vector3d{-yaw, 0, 0}) * R0;
     Rs[0] = R0;
     cout << "init R0 " << endl << Rs[0] << endl;
+    cout << "saving result to: " << VINS_RESULT_PATH << endl;
     //Vs[0] = Vector3d(5, 0, 0);
 }
 
@@ -454,65 +453,15 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
     if (solver_flag == INITIAL)
     {
         // monocular + IMU initilization
-        if (!STEREO && USE_IMU)
+        if (frame_count == WINDOW_SIZE)
         {
-            if (frame_count == WINDOW_SIZE)
+            bool result = false;
+            if(ESTIMATE_EXTRINSIC != 2 && (header - initial_timestamp) > 0.1)
             {
-                bool result = false;
-                if(ESTIMATE_EXTRINSIC != 2 && (header - initial_timestamp) > 0.1)
-                {
-                    result = initialStructure();
-                    initial_timestamp = header;   
-                }
-                if(result)
-                {
-                    optimization();
-                    updateLatestStates();
-                    solver_flag = NON_LINEAR;
-                    slideWindow();
-                    ROS_INFO("Initialization finish!");
-                }
-                else
-                    slideWindow();
+                result = initialStructure();
+                initial_timestamp = header;   
             }
-        }
-
-        // stereo + IMU initilization
-        if(STEREO && USE_IMU)
-        {
-            f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
-            f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
-            if (frame_count == WINDOW_SIZE)
-            {
-                map<double, ImageFrame>::iterator frame_it;
-                int i = 0;
-                for (frame_it = all_image_frame.begin(); frame_it != all_image_frame.end(); frame_it++)
-                {
-                    frame_it->second.R = Rs[i];
-                    frame_it->second.T = Ps[i];
-                    i++;
-                }
-                solveGyroscopeBias(all_image_frame, Bgs);
-                for (int i = 0; i <= WINDOW_SIZE; i++)
-                {
-                    pre_integrations[i]->repropagate(Vector3d::Zero(), Bgs[i]);
-                }
-                optimization();
-                updateLatestStates();
-                solver_flag = NON_LINEAR;
-                slideWindow();
-                ROS_INFO("Initialization finish!");
-            }
-        }
-
-        // stereo only initilization
-        if(STEREO && !USE_IMU)
-        {
-            f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
-            f_manager.triangulate(frame_count, Ps, Rs, tic, ric);
-            optimization();
-
-            if(frame_count == WINDOW_SIZE)
+            if(result)
             {
                 optimization();
                 updateLatestStates();
@@ -520,10 +469,10 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
                 slideWindow();
                 ROS_INFO("Initialization finish!");
             }
+            else
+                slideWindow();
         }
-
-        if(frame_count < WINDOW_SIZE)
-        {
+        if(frame_count < WINDOW_SIZE) {
             frame_count++;
             int prev_frame = frame_count - 1;
             Ps[frame_count] = Ps[prev_frame];
@@ -532,10 +481,8 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
             Bas[frame_count] = Bas[prev_frame];
             Bgs[frame_count] = Bgs[prev_frame];
         }
-
     }
-    else
-    {
+    else {
         TicToc t_solve;
         if(!USE_IMU)
             f_manager.initFramePoseByPnP(frame_count, Ps, Rs, tic, ric);
@@ -544,16 +491,14 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         set<int> removeIndex;
         outliersRejection(removeIndex);
         f_manager.removeOutlier(removeIndex);
-        if (! MULTIPLE_THREAD)
+        if (!MULTIPLE_THREAD)
         {
             featureTracker.removeOutliers(removeIndex);
             predictPtsInNextFrame();
         }
-            
         ROS_DEBUG("solver costs: %fms", t_solve.toc());
 
-        if (failureDetection())
-        {
+        if (failureDetection()) {
             ROS_WARN("failure detection!");
             failure_occur = 1;
             clearState();
@@ -604,7 +549,7 @@ bool Estimator::initialStructure()
         //ROS_WARN("IMU variation %f!", var);
         if(var < 0.25)
         {
-            ROS_INFO("IMU excitation not enouth!");
+            ROS_INFO("IMU excitation not enough!");
             //return false;
         }
     }
@@ -1081,28 +1026,16 @@ void Estimator::optimization()
             if (imu_i != imu_j)
             {
                 Vector3d pts_j = it_per_frame.point;
-                ProjectionTwoFrameOneCamFactor *f_td = new ProjectionTwoFrameOneCamFactor(pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
-                                                                 it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
-                problem.AddResidualBlock(f_td, loss_function, para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index], para_Td[0]);
+                ProjectionTwoFrameOneCamFactor *f_td = new ProjectionTwoFrameOneCamFactor(
+                    pts_i, pts_j, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocity,
+                    it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td
+                );
+                problem.AddResidualBlock(
+                    f_td, loss_function, para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], 
+                    para_Feature[feature_index], para_Td[0]
+                );
             }
 
-            if(STEREO && it_per_frame.is_stereo)
-            {                
-                Vector3d pts_j_right = it_per_frame.pointRight;
-                if(imu_i != imu_j)
-                {
-                    ProjectionTwoFrameTwoCamFactor *f = new ProjectionTwoFrameTwoCamFactor(pts_i, pts_j_right, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocityRight,
-                                                                 it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
-                    problem.AddResidualBlock(f, loss_function, para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Ex_Pose[1], para_Feature[feature_index], para_Td[0]);
-                }
-                else
-                {
-                    ProjectionOneFrameTwoCamFactor *f = new ProjectionOneFrameTwoCamFactor(pts_i, pts_j_right, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocityRight,
-                                                                 it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
-                    problem.AddResidualBlock(f, loss_function, para_Ex_Pose[0], para_Ex_Pose[1], para_Feature[feature_index], para_Td[0]);
-                }
-               
-            }
             f_m_cnt++;
         }
     }
@@ -1199,28 +1132,6 @@ void Estimator::optimization()
                                                                                         vector<double *>{para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Feature[feature_index], para_Td[0]},
                                                                                         vector<int>{0, 3});
                         marginalization_info->addResidualBlockInfo(residual_block_info);
-                    }
-                    if(STEREO && it_per_frame.is_stereo)
-                    {
-                        Vector3d pts_j_right = it_per_frame.pointRight;
-                        if(imu_i != imu_j)
-                        {
-                            ProjectionTwoFrameTwoCamFactor *f = new ProjectionTwoFrameTwoCamFactor(pts_i, pts_j_right, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocityRight,
-                                                                          it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
-                            ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(f, loss_function,
-                                                                                           vector<double *>{para_Pose[imu_i], para_Pose[imu_j], para_Ex_Pose[0], para_Ex_Pose[1], para_Feature[feature_index], para_Td[0]},
-                                                                                           vector<int>{0, 4});
-                            marginalization_info->addResidualBlockInfo(residual_block_info);
-                        }
-                        else
-                        {
-                            ProjectionOneFrameTwoCamFactor *f = new ProjectionOneFrameTwoCamFactor(pts_i, pts_j_right, it_per_id.feature_per_frame[0].velocity, it_per_frame.velocityRight,
-                                                                          it_per_id.feature_per_frame[0].cur_td, it_per_frame.cur_td);
-                            ResidualBlockInfo *residual_block_info = new ResidualBlockInfo(f, loss_function,
-                                                                                           vector<double *>{para_Ex_Pose[0], para_Ex_Pose[1], para_Feature[feature_index], para_Td[0]},
-                                                                                           vector<int>{2});
-                            marginalization_info->addResidualBlockInfo(residual_block_info);
-                        }
                     }
                 }
             }
@@ -1535,30 +1446,6 @@ void Estimator::outliersRejection(set<int> &removeIndex)
                 err += tmp_error;
                 errCnt++;
                 //printf("tmp_error %f\n", FOCAL_LENGTH / 1.5 * tmp_error);
-            }
-            // need to rewrite projecton factor.........
-            if(STEREO && it_per_frame.is_stereo)
-            {
-                
-                Vector3d pts_j_right = it_per_frame.pointRight;
-                if(imu_i != imu_j)
-                {            
-                    double tmp_error = reprojectionError(Rs[imu_i], Ps[imu_i], ric[0], tic[0], 
-                                                        Rs[imu_j], Ps[imu_j], ric[1], tic[1],
-                                                        depth, pts_i, pts_j_right);
-                    err += tmp_error;
-                    errCnt++;
-                    //printf("tmp_error %f\n", FOCAL_LENGTH / 1.5 * tmp_error);
-                }
-                else
-                {
-                    double tmp_error = reprojectionError(Rs[imu_i], Ps[imu_i], ric[0], tic[0], 
-                                                        Rs[imu_j], Ps[imu_j], ric[1], tic[1],
-                                                        depth, pts_i, pts_j_right);
-                    err += tmp_error;
-                    errCnt++;
-                    //printf("tmp_error %f\n", FOCAL_LENGTH / 1.5 * tmp_error);
-                }       
             }
         }
         double ave_err = err / errCnt;

@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="vins_config_file" default="$(find vins)/../config/optor/optor_stereo_imu_config.yaml" />
+    <!--optor stereo camera-->
+    <node name="optor_stereo_visensor" pkg="optor_stereo_visensor_ros" type="stereo_visensor_node" output="screen"
+        respawn="false" launch-prefix="">
+        <param name="settings_file" value="$(find optor_stereo_visensor_ros)/optor_VISensor_Setups.txt" />
+        <param name="show" value="false" />
+    </node>
+    <node name="camera_throttle_l" pkg="topic_tools" type="throttle" args="messages /stereo/left/image 15.0 /left" />
+    <node name="camera_throttle_r" pkg="topic_tools" type="throttle" args="messages /stereo/right/image 15.0 /right" />  
+    <!--VINS Fusion-->
+    <node name="vins_node" pkg="vins" type="vins_node" output="screen"
+        args="$(arg vins_config_file)">
+    </node>
+    <!--VINS Fusion loop-->
+    <node name="loop_fusion" pkg="loop_fusion" type="loop_fusion_node" output="screen"
+        args="$(arg vins_config_file)">
+    </node>
+    <!--rviz-->
+    <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log" 
+        args="-d $(find vins)/../config/vins_optor_rviz_config.rviz" >
+    </node>
+</launch>

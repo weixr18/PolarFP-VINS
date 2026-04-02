@@ -1,3 +1,3 @@
-# VINS-Fusion
+# PolarFP-VINS
 
-This is the original VINS-Fusion code.
+Frontend rewrited to support polarization camera(mono only).

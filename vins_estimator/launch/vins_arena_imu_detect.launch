@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="arena_config_file" default="$(find arena_camera)/config/arena_spin4.yaml" />
+    <arg name="vins_config_file" default="$(find vins)/../config/arena/arena_spin4_imu_config.yaml" />
+    <!--arena camera-->
+    <node name="arena_camera_node" pkg="arena_camera" type="arena_camera_node" output="screen"
+        respawn="false" launch-prefix="">
+        <rosparam command="load" file="$(arg arena_config_file)" />
+    </node>
+    <!--AHRS IMU-->
+    <node name="ahrs_driver_node" pkg="ahrs_driver" type="ahrs_driver_node" output="screen" 
+        respawn="true">
+    </node>        
+    <!--VINS Fusion-->
+    <node name="vins_node" pkg="vins" type="vins_node" output="screen"
+        args="$(arg vins_config_file)">
+    </node>
+    <!--VINS Fusion loop-->
+    <node name="loop_fusion_node" pkg="loop_fusion" type="loop_fusion_node" output="screen"
+        args="$(arg vins_config_file)">
+    </node>
+    <!--rviz-->
+    <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log" 
+        args="-d $(find vins)/../config/vins_detect_rviz_config.rviz" >
+    </node>
+    <!--tensorrt YOLOV7-->
+    <node name="tensorrt_alpha_node" pkg="tensorrt_alpha_ros" type="tensorrt_alpha_ros_node" output="log">
+        <param name="model_class" value="YOLOV7" />
+        <param name="engine_file" value="$(find tensorrt_alpha_ros)/models/trt/yolov7/yolov7.trt" />
+        <param name="nn_input_w" value="640"/>
+        <param name="nn_input_h" value="640"/>
+        <param name="batch_size" value="1"/>
+        <param name="input_mode" value="0"/> 
+        <param name="cam_topic" value="/arena_camera_node/image_raw" />
+        <param name="cam_input_w" value="612"/>
+        <param name="cam_input_h" value="512"/>
+        <param name="show" value="false" />
+    </node>
+</launch>

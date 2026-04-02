@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<launch>
+    <!-- <arg name="arena_config_file" default="$(find arena_camera)/config/arena_default.yaml" /> -->
+    <!-- <arg name="vins_config_file" default="$(find vins)/../config/arena/arena_imu_config.yaml" /> -->
+    <arg name="arena_config_file" default="$(find arena_camera)/config/arena_spin4.yaml" />
+    <arg name="vins_config_file" default="$(find vins)/../config/arena/arena_spin4_imu_config.yaml" />
+    
+    <!--arena camera-->
+    <node name="arena_camera_node" pkg="arena_camera" type="arena_camera_node" output="screen"
+        respawn="false" launch-prefix="">
+        <rosparam command="load" file="$(arg arena_config_file)" />
+    </node>
+    <!--AHRS IMU-->
+    <node name="ahrs_driver_node" pkg="ahrs_driver" type="ahrs_driver_node" output="screen" 
+        respawn="true">
+    </node>        
+    <!--VINS Fusion-->
+    <node name="vins_node" pkg="vins" type="vins_node" output="screen"
+        args="$(arg vins_config_file)">
+    </node>
+    <!--VINS Fusion loop-->
+    <node name="loop_fusion_node" pkg="loop_fusion" type="loop_fusion_node" output="screen"
+        args="$(arg vins_config_file)">
+    </node>
+    <!--rviz-->
+    <node name="rvizvisualisation" pkg="rviz" type="rviz" output="log" 
+        args="-d $(find vins)/../config/vins_rviz_config.rviz" >
+    </node>
+</launch>

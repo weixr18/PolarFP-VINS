@@ -28,12 +28,12 @@ int ESTIMATE_TD;
 int ROLLING_SHUTTER;
 std::string EX_CALIB_RESULT_PATH;
 std::string VINS_RESULT_PATH;
+std::string VINS_RESULT_NAME;
 std::string OUTPUT_FOLDER;
 std::string IMU_TOPIC;
 int ROW, COL;
 double TD;
 int NUM_OF_CAM;
-int STEREO;
 int USE_IMU;
 int MULTIPLE_THREAD;
 map<int, Eigen::Vector3d> pts_gt;
@@ -45,6 +45,7 @@ int MIN_DIST;
 double F_THRESHOLD;
 int SHOW_TRACK;
 int FLOW_BACK;
+std::string POLAR_CHANNEL;
 
 
 template <typename T>
@@ -108,7 +109,8 @@ void readParameters(std::string config_file)
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
     fsSettings["output_path"] >> OUTPUT_FOLDER;
-    VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
+    fsSettings["output_name"] >> VINS_RESULT_NAME;
+    VINS_RESULT_PATH = OUTPUT_FOLDER + "/" + VINS_RESULT_NAME + ".txt";
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;
     std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
     fout.close();
@@ -148,7 +150,6 @@ void readParameters(std::string config_file)
         assert(0);
     }
 
-
     int pn = config_file.find_last_of('/');
     std::string configPath = config_file.substr(0, pn);
     
@@ -156,23 +157,6 @@ void readParameters(std::string config_file)
     fsSettings["cam0_calib"] >> cam0Calib;
     std::string cam0Path = configPath + "/" + cam0Calib;
     CAM_NAMES.push_back(cam0Path);
-
-    if(NUM_OF_CAM == 2)
-    {
-        STEREO = 1;
-        std::string cam1Calib;
-        fsSettings["cam1_calib"] >> cam1Calib;
-        std::string cam1Path = configPath + "/" + cam1Calib; 
-        //printf("%s cam1 path\n", cam1Path.c_str() );
-        CAM_NAMES.push_back(cam1Path);
-        
-        cv::Mat cv_T;
-        fsSettings["body_T_cam1"] >> cv_T;
-        Eigen::Matrix4d T;
-        cv::cv2eigen(cv_T, T);
-        RIC.push_back(T.block<3, 3>(0, 0));
-        TIC.push_back(T.block<3, 1>(0, 3));
-    }
 
     INIT_DEPTH = 5.0;
     BIAS_ACC_THRESHOLD = 0.1;

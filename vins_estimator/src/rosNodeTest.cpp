@@ -22,7 +22,6 @@
 #include "utility/visualization.h"
 
 Estimator estimator;
-
 queue<sensor_msgs::ImuConstPtr> imu_buf;
 queue<sensor_msgs::PointCloudConstPtr> feature_buf;
 queue<sensor_msgs::ImageConstPtr> img0_buf;
@@ -35,6 +34,7 @@ void img0_callback(const sensor_msgs::ImageConstPtr &img_msg)
     m_buf.lock();
     img0_buf.push(img_msg);
     m_buf.unlock();
+    // std::cout << "Get img 0 !!!!!!!!!\n";
 }
 
 void img1_callback(const sensor_msgs::ImageConstPtr &img_msg)
@@ -42,12 +42,13 @@ void img1_callback(const sensor_msgs::ImageConstPtr &img_msg)
     m_buf.lock();
     img1_buf.push(img_msg);
     m_buf.unlock();
+    // std::cout << "Get img 1 !!!!!!!!!\n";
 }
 
 
 cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg)
 {
-    cv_bridge::CvImageConstPtr ptr;
+    cv_bridge::CvImageConstPtr raw_ptr;
     if (img_msg->encoding == "8UC1")
     {
         sensor_msgs::Image img;
@@ -58,74 +59,32 @@ cv::Mat getImageFromMsg(const sensor_msgs::ImageConstPtr &img_msg)
         img.step = img_msg->step;
         img.data = img_msg->data;
         img.encoding = "mono8";
-        ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
+        raw_ptr = cv_bridge::toCvCopy(img, sensor_msgs::image_encodings::MONO8);
     }
-    else
-        ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
-
-    cv::Mat img = ptr->image.clone();
-    return img;
+    else {
+        raw_ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::MONO8);
+    }
+    return raw_ptr->image;
 }
 
 // extract images with same timestamp from two topics
 void sync_process()
 {
-    while(1)
-    {
-        if(STEREO)
+    while(1) {
+        cv::Mat image;
+        std_msgs::Header header;
+        double time = 0;
+        m_buf.lock();
+        if(!img0_buf.empty())
         {
-            cv::Mat image0, image1;
-            std_msgs::Header header;
-            double time = 0;
-            m_buf.lock();
-            if (!img0_buf.empty() && !img1_buf.empty())
-            {
-                double time0 = img0_buf.front()->header.stamp.toSec();
-                double time1 = img1_buf.front()->header.stamp.toSec();
-                // 0.003s sync tolerance
-                if(time0 < time1 - 0.003)
-                {
-                    img0_buf.pop();
-                    printf("throw img0\n");
-                }
-                else if(time0 > time1 + 0.003)
-                {
-                    img1_buf.pop();
-                    printf("throw img1\n");
-                }
-                else
-                {
-                    time = img0_buf.front()->header.stamp.toSec();
-                    header = img0_buf.front()->header;
-                    image0 = getImageFromMsg(img0_buf.front());
-                    img0_buf.pop();
-                    image1 = getImageFromMsg(img1_buf.front());
-                    img1_buf.pop();
-                    //printf("find img0 and img1\n");
-                }
-            }
-            m_buf.unlock();
-            if(!image0.empty())
-                estimator.inputImage(time, image0, image1);
+            time = img0_buf.front()->header.stamp.toSec();
+            header = img0_buf.front()->header;
+            image = getImageFromMsg(img0_buf.front());
+            img0_buf.pop();
         }
-        else
-        {
-            cv::Mat image;
-            std_msgs::Header header;
-            double time = 0;
-            m_buf.lock();
-            if(!img0_buf.empty())
-            {
-                time = img0_buf.front()->header.stamp.toSec();
-                header = img0_buf.front()->header;
-                image = getImageFromMsg(img0_buf.front());
-                img0_buf.pop();
-            }
-            m_buf.unlock();
-            if(!image.empty())
-                estimator.inputImage(time, image);
-        }
-
+        m_buf.unlock();
+        if(!image.empty())
+            estimator.inputImage(time, image);
         std::chrono::milliseconds dura(2);
         std::this_thread::sleep_for(dura);
     }
@@ -196,12 +155,12 @@ void imu_switch_callback(const std_msgs::BoolConstPtr &switch_msg)
     if (switch_msg->data == true)
     {
         //ROS_WARN("use IMU!");
-        estimator.changeSensorType(1, STEREO);
+        estimator.changeSensorType(1, 0);
     }
     else
     {
         //ROS_WARN("disable IMU!");
-        estimator.changeSensorType(0, STEREO);
+        estimator.changeSensorType(0, 0);
     }
     return;
 }
@@ -226,18 +185,17 @@ int main(int argc, char **argv)
     ros::init(argc, argv, "vins_estimator");
     ros::NodeHandle n("~");
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
+    // ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Debug);
 
     if(argc != 2)
     {
-        printf("please intput: rosrun vins vins_node [config file] \n"
+        ROS_ERROR("please intput: rosrun vins vins_node [config file] \n"
                "for example: rosrun vins vins_node "
                "~/catkin_ws/src/VINS-Fusion/config/euroc/euroc_stereo_imu_config.yaml \n");
         return 1;
     }
-
     string config_file = argv[1];
-    printf("config_file: %s\n", argv[1]);
-
+    ROS_INFO("config_file: %s\n", argv[1]);
     readParameters(config_file);
     estimator.setParameter();
 
@@ -254,13 +212,10 @@ int main(int argc, char **argv)
     {
         sub_imu = n.subscribe(IMU_TOPIC, 2000, imu_callback, ros::TransportHints().tcpNoDelay());
     }
-    ros::Subscriber sub_feature = n.subscribe("/feature_tracker/feature", 2000, feature_callback);
+    ROS_INFO_STREAM("IMAGE0_TOPIC: " << IMAGE0_TOPIC);
+    std::cout << "Ready for data." << std::endl;
     ros::Subscriber sub_img0 = n.subscribe(IMAGE0_TOPIC, 100, img0_callback);
     ros::Subscriber sub_img1;
-    if(STEREO)
-    {
-        sub_img1 = n.subscribe(IMAGE1_TOPIC, 100, img1_callback);
-    }
     ros::Subscriber sub_restart = n.subscribe("/vins_restart", 100, restart_callback);
     ros::Subscriber sub_imu_switch = n.subscribe("/vins_imu_switch", 100, imu_switch_callback);
     ros::Subscriber sub_cam_switch = n.subscribe("/vins_cam_switch", 100, cam_switch_callback);

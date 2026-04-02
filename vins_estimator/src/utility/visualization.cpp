@@ -8,6 +8,7 @@
  *******************************************************/
 
 #include "visualization.h"
+#include <iomanip>
 
 using namespace ros;
 using namespace Eigen;
@@ -156,22 +157,25 @@ void pubOdometry(const Estimator &estimator, const std_msgs::Header &header)
         ofstream foutC(VINS_RESULT_PATH, ios::app);
         foutC.setf(ios::fixed, ios::floatfield);
         foutC.precision(0);
-        foutC << header.stamp.toSec() * 1e9 << ",";
+        foutC << header.stamp.toSec() << " "; // don't * 1e9 
         foutC.precision(5);
-        foutC << estimator.Ps[WINDOW_SIZE].x() << ","
-              << estimator.Ps[WINDOW_SIZE].y() << ","
-              << estimator.Ps[WINDOW_SIZE].z() << ","
-              << tmp_Q.w() << ","
-              << tmp_Q.x() << ","
-              << tmp_Q.y() << ","
-              << tmp_Q.z() << ","
-              << estimator.Vs[WINDOW_SIZE].x() << ","
-              << estimator.Vs[WINDOW_SIZE].y() << ","
-              << estimator.Vs[WINDOW_SIZE].z() << "," << endl;
+        foutC << estimator.Ps[WINDOW_SIZE].x() << " "
+              << estimator.Ps[WINDOW_SIZE].y() << " "
+              << estimator.Ps[WINDOW_SIZE].z() << " "
+              << tmp_Q.x() << " "
+              << tmp_Q.y() << " "
+              << tmp_Q.z() << " "
+              << tmp_Q.w() << endl;
+            //   << estimator.Vs[WINDOW_SIZE].x() << " "
+            //   << estimator.Vs[WINDOW_SIZE].y() << " "
+            //   << estimator.Vs[WINDOW_SIZE].z() << " " 
         foutC.close();
         Eigen::Vector3d tmp_T = estimator.Ps[WINDOW_SIZE];
-        printf("time: %f, t: %f %f %f q: %f %f %f %f \n", header.stamp.toSec(), tmp_T.x(), tmp_T.y(), tmp_T.z(),
-                                                          tmp_Q.w(), tmp_Q.x(), tmp_Q.y(), tmp_Q.z());
+        std::cout << "time: " << std::fixed << std::setprecision(3) << header.stamp.toSec() 
+            << ", t: " << tmp_T.x() << " "  << tmp_T.y() << " " << tmp_T.z() << " " 
+            << ", q: " << tmp_Q.w() << " " << tmp_Q.x() << " " << tmp_Q.y() 
+            << " " << tmp_Q.z() << " " << "\r";
+        std::cout.flush();
     }
 }
 
@@ -234,12 +238,6 @@ void pubCameraPose(const Estimator &estimator, const std_msgs::Header &header)
 
         cameraposevisual.reset();
         cameraposevisual.add_pose(P, R);
-        if(STEREO)
-        {
-            Vector3d P = estimator.Ps[i] + estimator.Rs[i] * estimator.tic[1];
-            Quaterniond R = Quaterniond(estimator.Rs[i] * estimator.ric[1]);
-            cameraposevisual.add_pose(P, R);
-        }
         cameraposevisual.publish_by(pub_camera_pose_visual, odometry.header);
     }
 }
