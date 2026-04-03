@@ -48,7 +48,7 @@ struct PolarConfig {
     double LK_MATCH_THRESHOLD = 10.0;
 
     // NMS与RANSAC参数
-    int NMS_RADIUS = 11;
+    int NMS_RADIUS = 21;
     double RANSAC_REMAP_THR = 2.0;
     double RANSAC_CONFIDENCE = 0.99;
 

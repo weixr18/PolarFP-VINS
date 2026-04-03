@@ -9,7 +9,7 @@ imu_topic: "/ahrs_driver_node/imu_data"
 image0_topic: "/arena_cam_qc2/image_raw"
 image1_topic: "/arena_cam_qc1/image_raw"
 output_path: "/home/dhz/SLAM/output/PolarFP-VINS"
-output_name: "dark_2026-03-22-11-24-43_MI_all"
+output_name: "dark_2026-03-23-11-35-33_MI_all"
 
 
 cam0_calib: "TRI050S-spin4.yaml"
