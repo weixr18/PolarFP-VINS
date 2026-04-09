@@ -263,7 +263,28 @@ std::vector<MatchedPair> PolarFeatureTracker::matchFeatures(
     std::vector<float> err;
     cv::calcOpticalFlowPyrLK(image_prev, image_curr, pts_prev, pts_pred_lk, status, err,
                              config.LK_WIN_SIZE, config.LK_MAX_LEVEL, config.LK_CRITERIA);
-    // 2. KD-tree匹配
+    
+    // 2. 【新增】LK反向光流验证 (Reverse Flow Check)
+    std::vector<uchar> reverse_status;
+    std::vector<cv::Point2f> reverse_pts = pts_pred_lk;
+    cv::calcOpticalFlowPyrLK(image_curr, image_prev, pts_pred_lk, reverse_pts, reverse_status, err,
+                             config.LK_WIN_SIZE, 1, config.LK_CRITERIA, cv::OPTFLOW_USE_INITIAL_FLOW);
+
+    // 3. 【新增】一致性检查：正向+反向成功且反向回来的点与原点距离 < 0.5 像素
+    for (size_t i = 0; i < status.size(); i++) {
+        if (status[i] && reverse_status[i]) {
+            double dist = cv::norm(pts_prev[i] - reverse_pts[i]);
+            if (dist <= 0.5) {
+                status[i] = 1;  // 保留：双向光流一致
+            } else {
+                status[i] = 0;  // 剔除：反向不一致（漂移过大）
+            }
+        } else {
+            status[i] = 0;  // 剔除：正向或反向光流失败
+        }
+    }
+
+    // 4. KD-tree匹配
     tic_step.tic();
     std::vector<cv::Point2f> pts_curr_kp = extractPoints(pkp_curr);
     size_t n_prev = pts_pred_lk.size();
