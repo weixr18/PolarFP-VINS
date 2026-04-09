@@ -18,7 +18,7 @@ namespace camodocal { class Camera; using CameraPtr = boost::shared_ptr<Camera>;
 struct PolarConfig {
     std::string FP_METHOD = "fast";
     std::vector<std::string> ALL_CHANNELS = {"s0", "dop", "aopsin", "aopcos"};
-    std::vector<std::string> FP_CHANNELS = {"s0", "dop","aopsin", "aopcos"}; // , "dop",  "aopsin", "aopcos"
+    std::vector<std::string> FP_CHANNELS = {"s0", "dop"}; // , "dop",  "aopsin", "aopcos"
     std::map<std::string, cv::Scalar> CHANNEL_COLORS = {
         {"s0", cv::Scalar(0, 255, 255)},    // yellow
         {"dop", cv::Scalar(0, 255, 0)},     // green

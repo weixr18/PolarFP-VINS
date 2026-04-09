@@ -255,7 +255,7 @@ std::vector<MatchedPair> PolarFeatureTracker::matchFeatures(
     const cv::Mat& image_curr, const std::vector<PolarKeyPoint>& pkp_curr) {
     TicToc tic_step;
     tic_step.tic();
-    // 1. LK optflow
+    // 1. LK optflow (forward)
     if (pkp_prev.empty() || pkp_curr.empty()) return {};
     std::vector<cv::Point2f> pts_prev = extractPoints(pkp_prev);
     std::vector<cv::Point2f> pts_pred_lk;
@@ -536,27 +536,114 @@ cv::Mat PolarFeatureTracker::getTrackImage() {
 
 // 绘制跟踪轨迹
 void PolarFeatureTracker::drawTrack(const cv::Mat &image, ChannelPairs &pairs) {
-    imTrack = image.clone();
-    if (imTrack.channels() == 1) {
-        cv::cvtColor(imTrack, imTrack, cv::COLOR_GRAY2BGR);
-    }
-    // 绘制特征点（按通道颜色）
-    for (const auto &c: pairs){
-        std::string channel = c.first;
-        cv::Scalar color = cv::Scalar(0, 255, 0);  // 默认绿色
-        auto it = config.CHANNEL_COLORS.find(channel);
-        if (it != config.CHANNEL_COLORS.end()) {
-            color = it->second;
+    // 获取四个通道的图像
+    cv::Mat s0_img, dop_img, aopsin_img, aopcos_img;
+
+    auto it_s0 = cur_polar_images.find("s0");
+    auto it_dop = cur_polar_images.find("dop");
+    auto it_aopsin = cur_polar_images.find("aopsin");
+    auto it_aopcos = cur_polar_images.find("aopcos");
+
+    if (it_s0 == cur_polar_images.end() || it_dop == cur_polar_images.end() ||
+        it_aopsin == cur_polar_images.end() || it_aopcos == cur_polar_images.end()) {
+        // 如果缺少通道，回退到原来的单图显示
+        imTrack = image.clone();
+        if (imTrack.channels() == 1) {
+            cv::cvtColor(imTrack, imTrack, cv::COLOR_GRAY2BGR);
         }
-        for (const MatchedPair& pair: c.second) {
+        return;
+    }
+
+    s0_img = it_s0->second.clone();
+    dop_img = it_dop->second.clone();
+    aopsin_img = it_aopsin->second.clone();
+    aopcos_img = it_aopcos->second.clone();
+
+    // 转换为彩色图像
+    if (s0_img.channels() == 1) cv::cvtColor(s0_img, s0_img, cv::COLOR_GRAY2BGR);
+    if (dop_img.channels() == 1) cv::cvtColor(dop_img, dop_img, cv::COLOR_GRAY2BGR);
+    if (aopsin_img.channels() == 1) cv::cvtColor(aopsin_img, aopsin_img, cv::COLOR_GRAY2BGR);
+    if (aopcos_img.channels() == 1) cv::cvtColor(aopcos_img, aopcos_img, cv::COLOR_GRAY2BGR);
+
+    // 获取各通道颜色
+    cv::Scalar s0_color = config.CHANNEL_COLORS.count("s0") ? config.CHANNEL_COLORS.at("s0") : cv::Scalar(0, 255, 255);
+    cv::Scalar dop_color = config.CHANNEL_COLORS.count("dop") ? config.CHANNEL_COLORS.at("dop") : cv::Scalar(0, 255, 0);
+    cv::Scalar aopsin_color = config.CHANNEL_COLORS.count("aopsin") ? config.CHANNEL_COLORS.at("aopsin") : cv::Scalar(0, 0, 255);
+    cv::Scalar aopcos_color = config.CHANNEL_COLORS.count("aopcos") ? config.CHANNEL_COLORS.at("aopcos") : cv::Scalar(255, 0, 0);
+
+    // 构建前一帧到当前帧的偏移映射（用于绘制轨迹线）
+    // 由于图像是分开显示的，需要在各自图像上绘制轨迹
+
+    // 在s0图像上绘制s0通道的特征点和轨迹
+    auto it_s0_pairs = pairs.find("s0");
+    if (it_s0_pairs != pairs.end()) {
+        for (const MatchedPair& pair : it_s0_pairs->second) {
             const auto& curr_pt = pair.second.kp.pt;
             const auto& prev_pt = pair.first.kp.pt;
-            // 绘制特征点
-            cv::circle(imTrack, curr_pt, 3, color, -1); // 绘制特征点
-            // 绘制跟踪轨迹
-            cv::line(imTrack, prev_pt, curr_pt, color, 1, cv::LINE_8);
+            cv::circle(s0_img, curr_pt, 3, s0_color, -1);
+            cv::line(s0_img, prev_pt, curr_pt, s0_color, 1, cv::LINE_8);
         }
     }
+
+    // 在dop图像上绘制dop通道的特征点和轨迹
+    auto it_dop_pairs = pairs.find("dop");
+    if (it_dop_pairs != pairs.end()) {
+        for (const MatchedPair& pair : it_dop_pairs->second) {
+            const auto& curr_pt = pair.second.kp.pt;
+            const auto& prev_pt = pair.first.kp.pt;
+            cv::circle(dop_img, curr_pt, 3, dop_color, -1);
+            cv::line(dop_img, prev_pt, curr_pt, dop_color, 1, cv::LINE_8);
+        }
+    }
+
+    // 在aopsin图像上绘制aopsin通道的特征点和轨迹
+    auto it_aopsin_pairs = pairs.find("aopsin");
+    if (it_aopsin_pairs != pairs.end()) {
+        for (const MatchedPair& pair : it_aopsin_pairs->second) {
+            const auto& curr_pt = pair.second.kp.pt;
+            const auto& prev_pt = pair.first.kp.pt;
+            cv::circle(aopsin_img, curr_pt, 3, aopsin_color, -1);
+            cv::line(aopsin_img, prev_pt, curr_pt, aopsin_color, 1, cv::LINE_8);
+        }
+    }
+
+    // 在aopcos图像上绘制aopcos通道的特征点和轨迹
+    auto it_aopcos_pairs = pairs.find("aopcos");
+    if (it_aopcos_pairs != pairs.end()) {
+        for (const MatchedPair& pair : it_aopcos_pairs->second) {
+            const auto& curr_pt = pair.second.kp.pt;
+            const auto& prev_pt = pair.first.kp.pt;
+            cv::circle(aopcos_img, curr_pt, 3, aopcos_color, -1);
+            cv::line(aopcos_img, prev_pt, curr_pt, aopcos_color, 1, cv::LINE_8);
+        }
+    }
+
+    // 创建田字格拼接图
+    int h = s0_img.rows;
+    int w = s0_img.cols;
+
+    // 创建大图 (2h x 2w)
+    imTrack = cv::Mat::zeros(h * 2, w * 2, CV_8UC3);
+
+    // 复制到对应位置
+    // 左上: s0
+    s0_img.copyTo(imTrack(cv::Rect(0, 0, w, h)));
+    // 右上: dop
+    dop_img.copyTo(imTrack(cv::Rect(w, 0, w, h)));
+    // 左下: aopsin
+    aopsin_img.copyTo(imTrack(cv::Rect(0, h, w, h)));
+    // 右下: aopcos
+    aopcos_img.copyTo(imTrack(cv::Rect(w, h, w, h)));
+
+    // 添加通道标签
+    cv::putText(imTrack, "S0", cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, s0_color, 2);
+    cv::putText(imTrack, "DoP", cv::Point(w + 10, 30), cv::FONT_HERSHEY_SIMPLEX, 1, dop_color, 2);
+    cv::putText(imTrack, "AoP Sin", cv::Point(10, h + 30), cv::FONT_HERSHEY_SIMPLEX, 1, aopsin_color, 2);
+    cv::putText(imTrack, "AoP Cos", cv::Point(w + 10, h + 30), cv::FONT_HERSHEY_SIMPLEX, 1, aopcos_color, 2);
+
+    // 在拼接图中间画分隔线
+    cv::line(imTrack, cv::Point(w, 0), cv::Point(w, 2 * h), cv::Scalar(128, 128, 128), 2);
+    cv::line(imTrack, cv::Point(0, h), cv::Point(2 * w, h), cv::Scalar(128, 128, 128), 2);
 }
 
 bool show_time_stats = true;
