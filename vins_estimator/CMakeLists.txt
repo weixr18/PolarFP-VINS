@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(vins)
+project(polarfp_vins)
+
+set(PROJECT_PREFIX polarfp_vins)
 
 set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_FLAGS "-std=c++14")
@@ -13,7 +15,7 @@ find_package(catkin REQUIRED COMPONENTS
     nav_msgs
     tf
     cv_bridge
-    camera_models
+    polarfp_camera_models
     image_transport)
 
 find_package(OpenCV REQUIRED)
@@ -53,6 +55,6 @@ add_library(vins_lib
 target_link_libraries(vins_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
 
 
-add_executable(vins_node src/rosNodeTest.cpp)
-target_link_libraries(vins_node vins_lib) 
+add_executable(${PROJECT_PREFIX}_node src/rosNodeTest.cpp)
+target_link_libraries(${PROJECT_PREFIX}_node vins_lib)
 

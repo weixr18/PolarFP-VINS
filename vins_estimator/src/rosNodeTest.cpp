@@ -223,15 +223,15 @@ void cam_switch_callback(const std_msgs::BoolConstPtr &switch_msg)
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "vins_estimator");
+    ros::init(argc, argv, "polarfp_vins_node");
     ros::NodeHandle n("~");
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);
 
     if(argc != 2)
     {
-        printf("please intput: rosrun vins vins_node [config file] \n"
-               "for example: rosrun vins vins_node "
-               "~/catkin_ws/src/VINS-Fusion/config/euroc/euroc_stereo_imu_config.yaml \n");
+        printf("please intput: rosrun polarfp_vins polarfp_vins_node [config file] \n"
+               "for example: rosrun polarfp_vins polarfp_vins_node "
+               "~/catkin_ws/src/PolarFP-VINS/config/euroc/euroc_stereo_imu_config.yaml \n");
         return 1;
     }
 

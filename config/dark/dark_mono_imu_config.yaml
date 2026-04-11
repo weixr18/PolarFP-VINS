@@ -10,7 +10,7 @@ image0_topic: "/arena_cam_qc2/comb_s0"
 image1_topic: "/arena_cam_qc1/comb_s0"
 polar_topic: "/ahrs_driver_node/polar_mono"
 output_path: "/home/dhz/SLAM/output/VINS-Fusion"
-output_name: "dark_1115_250lux_MI"
+output_name: "dark_2026-03-23-11-35-33_MI_all"
 
 
 cam0_calib: "TRI050S-spin4.yaml"
