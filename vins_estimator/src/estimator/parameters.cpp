@@ -8,6 +8,7 @@
  *******************************************************/
 
 #include "parameters.h"
+#include <sstream>
 
 double INIT_DEPTH;
 double MIN_PARALLAX;
@@ -45,6 +46,10 @@ int MIN_DIST;
 double F_THRESHOLD;
 int SHOW_TRACK;
 int FLOW_BACK;
+
+// Polar mode
+int USE_POLAR = 0;
+std::vector<std::string> POLAR_CHANNELS;
 
 
 template <typename T>
@@ -194,6 +199,29 @@ void readParameters(std::string config_file)
         ESTIMATE_EXTRINSIC = 0;
         ESTIMATE_TD = 0;
         printf("no imu, fix extrinsic param; no time offset calibration\n");
+    }
+
+    // Polar mode parameters
+    if (!fsSettings["use_polar"].empty())
+        USE_POLAR = (int)fsSettings["use_polar"];
+
+    if (USE_POLAR) {
+        std::string channels_str;
+        fsSettings["polar_channels"] >> channels_str;
+        std::stringstream ss(channels_str);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            item.erase(0, item.find_first_not_of(" \t"));
+            item.erase(item.find_last_not_of(" \t") + 1);
+            POLAR_CHANNELS.push_back(item);
+        }
+        if (POLAR_CHANNELS.empty()) {
+            POLAR_CHANNELS = {"s0", "dop"};
+            ROS_WARN("polar_channels not specified, using default: s0,dop");
+        }
+        ROS_INFO("Polar mode enabled, channels: %zu", POLAR_CHANNELS.size());
+        for (const auto& ch : POLAR_CHANNELS)
+            ROS_INFO("  channel: %s", ch.c_str());
     }
 
     fsSettings.release();

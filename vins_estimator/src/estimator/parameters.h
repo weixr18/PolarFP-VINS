@@ -64,6 +64,10 @@ extern double F_THRESHOLD;
 extern int SHOW_TRACK;
 extern int FLOW_BACK;
 
+// Polar mode parameters
+extern int USE_POLAR;
+extern std::vector<std::string> POLAR_CHANNELS;
+
 void readParameters(std::string config_file);
 
 enum SIZE_PARAMETERIZATION

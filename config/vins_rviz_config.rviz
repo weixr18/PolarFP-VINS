@@ -72,118 +72,6 @@ Visualization Manager:
       Value: true
     - Class: rviz/Group
       Displays:
-        - Class: rviz/MarkerArray
-          Enabled: true
-          Marker Topic: /loop_fusion/pose_graph
-          Name: loopLink
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: true
-        - Class: rviz/MarkerArray
-          Enabled: true
-          Marker Topic: /loop_fusion/camera_pose_visual
-          Name: loopCamera
-          Namespaces:
-            {}
-          Queue Size: 100
-          Value: true
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz/Path
-          Color: 204; 0; 0
-          Enabled: true
-          Head Diameter: 0.30000001192092896
-          Head Length: 0.20000000298023224
-          Length: 0.30000001192092896
-          Line Style: Lines
-          Line Width: 0.03999999910593033
-          Name: loopPath
-          Offset:
-            X: 0
-            Y: 0
-            Z: 0
-          Pose Color: 255; 85; 255
-          Pose Style: None
-          Queue Size: 10
-          Radius: 0.029999999329447746
-          Shaft Diameter: 0.10000000149011612
-          Shaft Length: 0.10000000149011612
-          Topic: /loop_fusion/pose_graph_path
-          Unreliable: false
-          Value: true
-        - Alpha: 1
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: -0.00362956034950912
-            Min Value: -0.15546569228172302
-            Value: true
-          Axis: Z
-          Channel Name: intensity
-          Class: rviz/PointCloud
-          Color: 255; 255; 255
-          Color Transformer: FlatColor
-          Decay Time: 10
-          Enabled: false
-          Invert Rainbow: false
-          Max Color: 255; 255; 255
-          Min Color: 0; 0; 0
-          Name: PointCloud
-          Position Transformer: XYZ
-          Queue Size: 10
-          Selectable: true
-          Size (Pixels): 2
-          Size (m): 0.009999999776482582
-          Style: Points
-          Topic: /loop_fusion/margin_cloud_loop_rect
-          Unreliable: false
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: false
-        - Alpha: 1
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 10
-            Min Value: -10
-            Value: true
-          Axis: Z
-          Channel Name: intensity
-          Class: rviz/PointCloud
-          Color: 0; 255; 0
-          Color Transformer: FlatColor
-          Decay Time: 0
-          Enabled: false
-          Invert Rainbow: false
-          Max Color: 255; 255; 255
-          Min Color: 0; 0; 0
-          Name: PointCloud
-          Position Transformer: XYZ
-          Queue Size: 10
-          Selectable: true
-          Size (Pixels): 4
-          Size (m): 0.009999999776482582
-          Style: Points
-          Topic: /loop_fusion/point_cloud_loop_rect
-          Unreliable: false
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: false
-        - Class: rviz/Image
-          Enabled: true
-          Image Topic: /loop_fusion/match_image
-          Max Value: 1
-          Median window: 5
-          Min Value: 0
-          Name: loop_match_Image
-          Normalize Range: true
-          Queue Size: 2
-          Transport Hint: raw
-          Unreliable: false
-          Value: true
-      Enabled: false
-      Name: LoopGroup
-    - Class: rviz/Group
-      Displays:
         - Alpha: 1
           Buffer Length: 1
           Class: rviz/Path
@@ -205,12 +93,12 @@ Visualization Manager:
           Radius: 0.029999999329447746
           Shaft Diameter: 0.10000000149011612
           Shaft Length: 0.10000000149011612
-          Topic: /vins_estimator/path
+          Topic: /polarfp_vins_node/path
           Unreliable: false
           Value: true
         - Class: rviz/MarkerArray
           Enabled: true
-          Marker Topic: /vins_estimator/camera_pose_visual
+          Marker Topic: /polarfp_vins_node/camera_pose_visual
           Name: CameraMarker
           Namespaces:
             CameraPoseVisualization: true
@@ -239,7 +127,7 @@ Visualization Manager:
           Size (Pixels): 2
           Size (m): 0.009999999776482582
           Style: Points
-          Topic: /vins_estimator/point_cloud
+          Topic: /polarfp_vins_node/point_cloud
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
@@ -267,14 +155,14 @@ Visualization Manager:
           Size (Pixels): 1
           Size (m): 0.009999999776482582
           Style: Points
-          Topic: /vins_estimator/margin_cloud
+          Topic: /polarfp_vins_node/margin_cloud
           Unreliable: false
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
         - Class: rviz/Image
           Enabled: true
-          Image Topic: /vins_estimator/image_track
+          Image Topic: /polarfp_vins_node/image_track
           Max Value: 1
           Median window: 5
           Min Value: 0

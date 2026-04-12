@@ -1,3 +1,2 @@
-# VINS-Fusion
+# PolarFP-VINS
 
-This is the original VINS-Fusion code.

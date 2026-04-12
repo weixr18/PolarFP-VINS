@@ -110,6 +110,11 @@ void Estimator::setParameter()
     cout << "set g " << g.transpose() << endl;
     featureTracker.readIntrinsicParameter(CAM_NAMES);
 
+    // 配置偏振通道
+    if (USE_POLAR) {
+        featureTracker.setPolarChannels(POLAR_CHANNELS);
+    }
+
     std::cout << "MULTIPLE_THREAD is " << MULTIPLE_THREAD << '\n';
     if (MULTIPLE_THREAD && !initThreadFlag)
     {

@@ -1,14 +1,15 @@
 %YAML:1.0
 
-#common parameters
-#support: 1 imu 1 cam; 1 imu 2 cam: 2 cam; 
+# common parameters
 imu: 1         
 num_of_cam: 1  
+use_polar: 1
+polar_channels: "s0,dop" # "s0,dop"
+
 
 imu_topic: "/ahrs_driver_node/imu_data"
-image0_topic: "/arena_cam_qc2/comb_s0"
-image1_topic: "/arena_cam_qc1/comb_s0"
-polar_topic: "/ahrs_driver_node/polar_mono"
+image0_topic: "/arena_cam_qc2/image_raw"
+image1_topic: "/arena_cam_qc1/image_raw"
 output_path: "/home/dhz/SLAM/output/VINS-Fusion"
 output_name: "dark_2026-03-23-11-35-33_MI_all"
 

@@ -1,8 +1,8 @@
 /*******************************************************
  * Copyright (C) 2019, Aerial Robotics Group, Hong Kong University of Science and Technology
- * 
+ *
  * This file is part of VINS.
- * 
+ *
  * Licensed under the GNU General Public License v3.0;
  * you may not use this file except in compliance with the License.
  *
@@ -11,6 +11,14 @@
 
 #include "feature_tracker.h"
 
+/**
+ * @brief 判断特征点是否在图像边界内
+ * @param pt 特征点坐标
+ * @return true 如果在边界内，false 否则
+ *
+ * 使用 BORDER_SIZE=1 作为安全边距，避免特征点过于靠近图像边缘
+ * 导致后续处理（如光流、去畸变）出现不稳定。
+ */
 bool FeatureTracker::inBorder(const cv::Point2f &pt)
 {
     const int BORDER_SIZE = 1;
@@ -19,6 +27,7 @@ bool FeatureTracker::inBorder(const cv::Point2f &pt)
     return BORDER_SIZE <= img_x && img_x < col - BORDER_SIZE && BORDER_SIZE <= img_y && img_y < row - BORDER_SIZE;
 }
 
+/** @brief 计算两个像素点之间的欧氏距离（自由函数，已被成员函数 distance 替代） */
 double distance(cv::Point2f pt1, cv::Point2f pt2)
 {
     //printf("pt1: %f %f pt2: %f %f\n", pt1.x, pt1.y, pt2.x, pt2.y);
@@ -27,6 +36,13 @@ double distance(cv::Point2f pt1, cv::Point2f pt2)
     return sqrt(dx * dx + dy * dy);
 }
 
+/**
+ * @brief 根据 status 状态压缩 Point2f 向量
+ * @param v 待压缩的向量（原地修改）
+ * @param status 状态标记，非零表示保留对应位置的元素
+ *
+ * 该函数在光流跟踪后使用，用于剔除跟踪失败或超界的特征点。
+ */
 void reduceVector(vector<cv::Point2f> &v, vector<uchar> status)
 {
     int j = 0;
@@ -36,6 +52,13 @@ void reduceVector(vector<cv::Point2f> &v, vector<uchar> status)
     v.resize(j);
 }
 
+/**
+ * @brief 根据 status 状态压缩 int 向量
+ * @param v 待压缩的向量（原地修改）
+ * @param status 状态标记，非零表示保留对应位置的元素
+ *
+ * 用于剔除对应特征点的 ID、跟踪计数等整数属性。
+ */
 void reduceVector(vector<int> &v, vector<uchar> status)
 {
     int j = 0;
@@ -45,6 +68,11 @@ void reduceVector(vector<int> &v, vector<uchar> status)
     v.resize(j);
 }
 
+/**
+ * @brief FeatureTracker 构造函数
+ *
+ * 初始化双目标志为0、特征点ID计数器为0、预测标志为false。
+ */
 FeatureTracker::FeatureTracker()
 {
     stereo_cam = 0;
@@ -52,6 +80,17 @@ FeatureTracker::FeatureTracker()
     hasPrediction = false;
 }
 
+/**
+ * @brief 设置 mask 以筛选特征点，保证特征点在图像中均匀分布
+ *
+ * 算法流程：
+ * 1. 将所有 (跟踪次数, 特征点坐标, ID) 打包并按跟踪次数降序排序
+ * 2. 优先保留跟踪时间长的特征点
+ * 3. 对每个保留的特征点，在 mask 上以 MIN_DIST 为半径画圆（置0）
+ * 4. 后续特征点只有在 mask 值为255的区域才会被保留
+ *
+ * 这样可以有效避免特征点过度聚集在纹理丰富的区域。
+ */
 void FeatureTracker::setMask()
 {
     mask = cv::Mat(row, col, CV_8UC1, cv::Scalar(255));
@@ -83,6 +122,7 @@ void FeatureTracker::setMask()
     }
 }
 
+/** @brief FeatureTracker 成员函数版本的两点间欧氏距离 */
 double FeatureTracker::distance(cv::Point2f &pt1, cv::Point2f &pt2)
 {
     //printf("pt1: %f %f pt2: %f %f\n", pt1.x, pt1.y, pt2.x, pt2.y);
@@ -91,11 +131,344 @@ double FeatureTracker::distance(cv::Point2f &pt1, cv::Point2f &pt2)
     return sqrt(dx * dx + dy * dy);
 }
 
+// =============================================
+// 偏振模式辅助函数实现
+// =============================================
+
+/** @brief 设置启用的偏振通道 */
+void FeatureTracker::setPolarChannels(const vector<string>& channel_names)
+{
+    channels.clear();
+    for (const auto& name : channel_names) {
+        channels.emplace_back(name);
+    }
+    polar_mode = true;
+    ROS_INFO("[PolarFP] setPolarChannels: %zu channels", channels.size());
+}
+
+/** @brief 从 PolarChannelResult 提取指定通道的 8bit 图像 */
+cv::Mat FeatureTracker::getChannelImage(const PolarChannelResult& result, const string& channel)
+{
+    if (channel == "s0")      return result.S0_img.clone();
+    if (channel == "dop")     return result.dop_img.clone();
+    if (channel == "aopsin")  return result.sin_img.clone();
+    if (channel == "aopcos")  return result.cos_img.clone();
+    ROS_WARN("[PolarFP] unknown channel: %s", channel.c_str());
+    return cv::Mat();
+}
+
+/** @brief 边界检查的通道版本 */
+bool FeatureTracker::inBorderImpl(const ChannelState& ch, const cv::Point2f& pt)
+{
+    const int BORDER_SIZE = 1;
+    int img_x = cvRound(pt.x);
+    int img_y = cvRound(pt.y);
+    return BORDER_SIZE <= img_x && img_x < ch.col - BORDER_SIZE &&
+           BORDER_SIZE <= img_y && img_y < ch.row - BORDER_SIZE;
+}
+
+/** @brief setMask 的单通道版本 */
+void FeatureTracker::setMaskForChannel(ChannelState& ch)
+{
+    ch.mask = cv::Mat(ch.row, ch.col, CV_8UC1, cv::Scalar(255));
+
+    vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
+    for (unsigned int i = 0; i < ch.cur_pts.size(); i++)
+        cnt_pts_id.push_back(make_pair(ch.track_cnt[i], make_pair(ch.cur_pts[i], ch.ids[i])));
+
+    sort(cnt_pts_id.begin(), cnt_pts_id.end(),
+         [](const pair<int, pair<cv::Point2f, int>> &a, const pair<int, pair<cv::Point2f, int>> &b) {
+             return a.first > b.first;
+         });
+
+    ch.cur_pts.clear();
+    ch.ids.clear();
+    ch.track_cnt.clear();
+
+    for (auto &it : cnt_pts_id)
+    {
+        if (ch.mask.at<uchar>(it.second.first) == 255)
+        {
+            ch.cur_pts.push_back(it.second.first);
+            ch.ids.push_back(it.second.second);
+            ch.track_cnt.push_back(it.first);
+            cv::circle(ch.mask, it.second.first, MIN_DIST, 0, -1);
+        }
+    }
+}
+
+/** @brief 速度计算的通道版本 */
+vector<cv::Point2f> FeatureTracker::ptsVelocityForChannel(ChannelState& ch)
+{
+    vector<cv::Point2f> pts_velocity;
+    ch.cur_un_pts_map.clear();
+    for (unsigned int i = 0; i < ch.ids.size(); i++)
+        ch.cur_un_pts_map.insert(make_pair(ch.ids[i], ch.cur_un_pts[i]));
+
+    if (!ch.prev_un_pts_map.empty())
+    {
+        double dt = ch.cur_time - ch.prev_time;
+        for (unsigned int i = 0; i < ch.ids.size(); i++)
+        {
+            std::map<int, cv::Point2f>::iterator it;
+            it = ch.prev_un_pts_map.find(ch.ids[i]);
+            if (it != ch.prev_un_pts_map.end())
+            {
+                double v_x = (ch.cur_un_pts[i].x - it->second.x) / dt;
+                double v_y = (ch.cur_un_pts[i].y - it->second.y) / dt;
+                pts_velocity.push_back(cv::Point2f(v_x, v_y));
+            }
+            else
+                pts_velocity.push_back(cv::Point2f(0, 0));
+        }
+    }
+    else
+    {
+        for (unsigned int i = 0; i < ch.cur_pts.size(); i++)
+            pts_velocity.push_back(cv::Point2f(0, 0));
+    }
+    return pts_velocity;
+}
+
+/** @brief 多通道可视化 */
+void FeatureTracker::drawTrackPolar()
+{
+    if (channels.empty()) return;
+
+    static const vector<cv::Scalar> channelColors = {
+        cv::Scalar(0, 255, 255),  // yellow - s0
+        cv::Scalar(0, 255, 0),    // green  - dop
+        cv::Scalar(0, 0, 255),    // red    - aopsin
+        cv::Scalar(255, 0, 0)     // blue   - aopcos
+    };
+
+    if (channels.size() == 1) {
+        // 单通道:直接在该图像上绘制
+        const auto& ch = channels[0];
+        if (ch.cur_img.empty()) return;
+        cv::cvtColor(ch.cur_img, imTrack, cv::COLOR_GRAY2RGB);
+        for (size_t j = 0; j < ch.cur_pts.size(); j++) {
+            double len = std::min(1.0, 1.0 * ch.track_cnt[j] / 20);
+            cv::circle(imTrack, ch.cur_pts[j], 2,
+                       cv::Scalar(255 * (1 - len), 0, 255 * len), 2);
+        }
+    } else {
+        // 多通道:2x2 网格拼接
+        int h = channels[0].row;
+        int w = channels[0].col;
+        imTrack = cv::Mat(h * 2, w * 2, CV_8UC3, cv::Scalar(0));
+
+        for (size_t c = 0; c < channels.size() && c < 4; c++) {
+            const auto& ch = channels[c];
+            if (ch.cur_img.empty()) continue;
+
+            int gridRow = c / 2;
+            int gridCol = c % 2;
+            cv::Mat chBGR;
+            cv::cvtColor(ch.cur_img, chBGR, cv::COLOR_GRAY2BGR);
+            cv::Mat roi = imTrack(cv::Rect(gridCol * w, gridRow * h, w, h));
+            chBGR.copyTo(roi);
+
+            // 绘制特征点
+            cv::Scalar color = channelColors[c % channelColors.size()];
+            for (size_t j = 0; j < ch.cur_pts.size(); j++) {
+                cv::Point2f pt(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
+                cv::circle(imTrack, pt, 2, color, 2);
+            }
+            // 绘制轨迹箭头
+            for (size_t j = 0; j < ch.cur_pts.size(); j++) {
+                auto it = ch.prevLeftPtsMap.find(ch.ids[j]);
+                if (it != ch.prevLeftPtsMap.end()) {
+                    cv::Point2f from(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
+                    cv::Point2f to(it->second.x + gridCol * w, it->second.y + gridRow * h);
+                    cv::arrowedLine(imTrack, from, to, cv::Scalar(0, 255, 0), 1, 8, 0, 0.2);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * @brief 偏振模式核心跟踪管线
+ *
+ * 每通道独立运行 VINS 管线(GFTT + LK光流 + 双向检查 + setMask),
+ * 合并结果输出给后端。
+ */
+map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>
+FeatureTracker::trackImagePolar(double _cur_time)
+{
+    // =============================================
+    // 1. 偏振图像分解: raw → 多通道
+    // =============================================
+    PolarChannelResult polar_result = raw2polar(cur_img);
+
+    for (auto& ch : channels) {
+        ch.cur_img = getChannelImage(polar_result, ch.name);
+        if (ch.cur_img.empty()) {
+            ROS_ERROR("[PolarFP] channel %s image is empty!", ch.name.c_str());
+            continue;
+        }
+        ch.row = ch.cur_img.rows;
+        ch.col = ch.cur_img.cols;
+    }
+
+    // =============================================
+    // 2. 对每个通道,独立运行 VINS 跟踪管线
+    // =============================================
+    for (auto& ch : channels) {
+        if (ch.cur_img.empty()) continue;
+
+        ch.cur_time = cur_time;
+
+        // ---- 2a. LK 光流跟踪(prev → cur) ----
+        if (!ch.prev_pts.empty() && !ch.prev_img.empty()) {
+            vector<uchar> status;
+            vector<float> err;
+
+            cv::calcOpticalFlowPyrLK(ch.prev_img, ch.cur_img, ch.prev_pts, ch.cur_pts,
+                                     status, err, cv::Size(21, 21), 3);
+
+            // ---- 2b. 反向光流检查 ----
+            if (FLOW_BACK) {
+                vector<uchar> reverse_status;
+                vector<cv::Point2f> reverse_pts = ch.prev_pts;
+                cv::calcOpticalFlowPyrLK(ch.cur_img, ch.prev_img, ch.cur_pts, reverse_pts,
+                                         reverse_status, err, cv::Size(21, 21), 1,
+                                         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 30, 0.01),
+                                         cv::OPTFLOW_USE_INITIAL_FLOW);
+                for (size_t i = 0; i < status.size(); i++) {
+                    if (status[i] && reverse_status[i] &&
+                        distance(ch.prev_pts[i], reverse_pts[i]) <= 0.5) {
+                        status[i] = 1;
+                    } else {
+                        status[i] = 0;
+                    }
+                }
+            }
+
+            // ---- 2c. 边界检查 ----
+            for (int i = 0; i < int(ch.cur_pts.size()); i++)
+                if (status[i] && !inBorderImpl(ch, ch.cur_pts[i]))
+                    status[i] = 0;
+
+            reduceVector(ch.prev_pts, status);
+            reduceVector(ch.cur_pts, status);
+            reduceVector(ch.ids, status);
+            reduceVector(ch.track_cnt, status);
+        }
+
+        // ---- 2d. track_cnt++ ----
+        for (auto &n : ch.track_cnt)
+            n++;
+
+        // ---- 2e. setMask:保证空间均匀分布 ----
+        setMaskForChannel(ch);
+
+        // ---- 2f. 新特征检测(GFTT) ----
+        int n_max_cnt = MAX_CNT - static_cast<int>(ch.cur_pts.size());
+        if (n_max_cnt > 0) {
+            if (ch.mask.empty())
+                cout << "mask is empty for channel " << ch.name << endl;
+            if (ch.mask.type() != CV_8UC1)
+                cout << "mask type wrong for channel " << ch.name << endl;
+            cv::goodFeaturesToTrack(ch.cur_img, ch.n_pts, n_max_cnt, 0.01, MIN_DIST, ch.mask);
+        } else {
+            ch.n_pts.clear();
+        }
+
+        // ---- 2g. 新特征加入,分配全局唯一 ID ----
+        for (auto &p : ch.n_pts) {
+            ch.cur_pts.push_back(p);
+            ch.ids.push_back(n_id++);   // 全局计数器,保证跨通道 ID 唯一
+            ch.track_cnt.push_back(1);
+        }
+
+        // ---- 2h. 归一化坐标(相机标定已匹配通道分辨率,直接使用) ----
+        ch.cur_un_pts = undistortedPts(ch.cur_pts, m_camera[0]);
+        ch.pts_velocity = ptsVelocityForChannel(ch);
+
+        // ---- 2i. 更新 prev 状态 ----
+        ch.prev_img = ch.cur_img.clone();
+        ch.prev_pts = ch.cur_pts;
+        ch.prev_un_pts = ch.cur_un_pts;
+        ch.prev_un_pts_map = ch.cur_un_pts_map;
+        ch.prev_time = ch.cur_time;
+        ch.prevLeftPtsMap.clear();
+        for (size_t i = 0; i < ch.cur_pts.size(); i++)
+            ch.prevLeftPtsMap[ch.ids[i]] = ch.cur_pts[i];
+    }
+
+    // =============================================
+    // 3. 合并所有通道结果 → VINS 格式
+    // =============================================
+    map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> featureFrame;
+    for (const auto& ch : channels) {
+        if (ch.cur_img.empty()) continue;
+        for (size_t i = 0; i < ch.ids.size(); i++) {
+            int feature_id = ch.ids[i];
+            double x = ch.cur_un_pts[i].x;
+            double y = ch.cur_un_pts[i].y;
+            double z = 1;
+            double p_u = ch.cur_pts[i].x;
+            double p_v = ch.cur_pts[i].y;
+            double velocity_x = ch.pts_velocity[i].x;
+            double velocity_y = ch.pts_velocity[i].y;
+
+            Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
+            xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
+            featureFrame[feature_id].emplace_back(0, xyz_uv_velocity);
+        }
+    }
+
+    // =============================================
+    // 4. 可视化
+    // =============================================
+    if (SHOW_TRACK)
+        drawTrackPolar();
+
+    // =============================================
+    // 5. 更新全局状态(用于后端交互)
+    // =============================================
+    hasPrediction = false;
+
+    // 将第一个通道的图像作为全局 cur_img 用于可视化
+    if (!channels.empty() && !channels[0].cur_img.empty())
+        cur_img = channels[0].cur_img;
+
+    return featureFrame;
+}
+
+/**
+ * @brief 核心跟踪函数：对输入图像进行特征点跟踪
+ * @param _cur_time 当前图像时间戳
+ * @param _img 当前帧左目图像（灰度图）
+ * @param _img1 当前帧右目图像（双目模式，默认空表示单目）
+ * @return 包含所有特征点观测数据的 map
+ *
+ * 主要处理流程：
+ * 1. 光流跟踪：使用 Lucas-Kanade 光流将 prev_pts 跟踪到 cur_pts
+ *    - 若有预测位置（来自IMU预积分或后端优化），使用 OPTFLOW_USE_INITIAL_FLOW 加速
+ *    - 若预测光流成功率低（<10个点），回退到标准光流（迭代3层）
+ *    - 可选的反向光流检查（FLOW_BACK）：从当前帧反推到上一帧，距离<0.5才认为匹配成功
+ * 2. 边界检查：剔除超出图像边界的特征点
+ * 3. 均匀化处理：调用 setMask() 优先保留跟踪时间长的特征点
+ * 4. 新特征点检测：在 mask 非零区域使用 Shi-Tomasi 角点检测补充新特征点
+ * 5. 去畸变：将像素坐标转换到归一化平面
+ * 6. 速度计算：根据前后两帧的归一化坐标差和时间差计算速度
+ * 7. 双目跟踪（如启用）：从左目跟踪到右目，同样做反向检查
+ * 8. 打包输出：将所有特征点数据组织为 map 结构返回
+ */
 map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat &_img1)
 {
-    TicToc t_r;
     cur_time = _cur_time;
     cur_img = _img;
+
+    // 偏振模式分支
+    if (isPolarMode())
+        return trackImagePolar(_cur_time);
+
+    // ====== 以下为原版 VINS 管线,完全不变 ======
+    TicToc t_r;
     row = cur_img.rows;
     col = cur_img.cols;
     cv::Mat rightImg = _img1;
@@ -117,9 +490,9 @@ map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> FeatureTracker::trackIm
         if(hasPrediction)
         {
             cur_pts = predict_pts;
-            cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts, status, err, cv::Size(21, 21), 1, 
+            cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts, status, err, cv::Size(21, 21), 1,
             cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 30, 0.01), cv::OPTFLOW_USE_INITIAL_FLOW);
-            
+
             int succ_num = 0;
             for (size_t i = 0; i < status.size(); i++)
             {
@@ -136,9 +509,9 @@ map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> FeatureTracker::trackIm
         {
             vector<uchar> reverse_status;
             vector<cv::Point2f> reverse_pts = prev_pts;
-            cv::calcOpticalFlowPyrLK(cur_img, prev_img, cur_pts, reverse_pts, reverse_status, err, cv::Size(21, 21), 1, 
+            cv::calcOpticalFlowPyrLK(cur_img, prev_img, cur_pts, reverse_pts, reverse_status, err, cv::Size(21, 21), 1,
             cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 30, 0.01), cv::OPTFLOW_USE_INITIAL_FLOW);
-            //cv::calcOpticalFlowPyrLK(cur_img, prev_img, cur_pts, reverse_pts, reverse_status, err, cv::Size(21, 21), 3); 
+            //cv::calcOpticalFlowPyrLK(cur_img, prev_img, cur_pts, reverse_pts, reverse_status, err, cv::Size(21, 21), 3);
             for(size_t i = 0; i < status.size(); i++)
             {
                 if(status[i] && reverse_status[i] && distance(prev_pts[i], reverse_pts[i]) <= 0.5)
@@ -149,7 +522,7 @@ map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> FeatureTracker::trackIm
                     status[i] = 0;
             }
         }
-        
+
         for (int i = 0; i < int(cur_pts.size()); i++)
             if (status[i] && !inBorder(cur_pts[i]))
                 status[i] = 0;
@@ -305,6 +678,15 @@ map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> FeatureTracker::trackIm
     return featureFrame;
 }
 
+/**
+ * @brief 使用基础矩阵 F 的 RANSAC 方法剔除外点
+ *
+ * 不同于 OpenCV 直接在像素坐标上计算 F 矩阵，本函数先将特征点
+ * 通过相机模型投影到归一化平面，再缩放到像素尺度进行 F 矩阵估计。
+ * 这样得到的 F 矩阵更准确地反映了相机运动的几何约束。
+ *
+ * 注意：该函数在当前代码中未被调用（被注释掉了）。
+ */
 void FeatureTracker::rejectWithF()
 {
     if (cur_pts.size() >= 8)
@@ -339,6 +721,14 @@ void FeatureTracker::rejectWithF()
     }
 }
 
+/**
+ * @brief 读取相机内参配置文件
+ * @param calib_file 相机标定文件路径列表
+ *
+ * 支持单目（1个文件）和双目（2个文件）配置。
+ * 使用 camodocal 的 CameraFactory 从 YAML 文件生成相机模型，
+ * 自动识别相机类型（针孔、梅涅特/鱼眼等）。
+ */
 void FeatureTracker::readIntrinsicParameter(const vector<string> &calib_file)
 {
     for (size_t i = 0; i < calib_file.size(); i++)
@@ -351,6 +741,14 @@ void FeatureTracker::readIntrinsicParameter(const vector<string> &calib_file)
         stereo_cam = 1;
 }
 
+/**
+ * @brief 显示去畸变后的图像（调试功能，默认关闭）
+ * @param name 显示窗口名称
+ *
+ * 遍历图像每个像素，通过相机模型将其映射到归一化平面，
+ * 再将归一化坐标按焦距和主点偏移到去畸变图像位置。
+ * 该函数可用于直观验证相机标定参数的正确性。
+ */
 void FeatureTracker::showUndistortion(const string &name)
 {
     cv::Mat undistortedImg(row + 600, col + 600, CV_8UC1, cv::Scalar(0));
@@ -388,6 +786,16 @@ void FeatureTracker::showUndistortion(const string &name)
     // cv::waitKey(0);
 }
 
+/**
+ * @brief 将像素坐标通过相机模型转换到归一化平面
+ * @param pts 待转换的像素坐标点集
+ * @param cam 相机模型指针
+ * @return 归一化平面坐标点集
+ *
+ * 使用 camodocal 库的 liftProjective 函数，将畸变图像上的
+ * 像素坐标 (u, v) 映射到归一化相机平面上的 (x, y, 1)。
+ * 归一化坐标消除了相机内参的影响，后续可直接用于几何计算。
+ */
 vector<cv::Point2f> FeatureTracker::undistortedPts(vector<cv::Point2f> &pts, camodocal::CameraPtr cam)
 {
     vector<cv::Point2f> un_pts;
@@ -401,7 +809,19 @@ vector<cv::Point2f> FeatureTracker::undistortedPts(vector<cv::Point2f> &pts, cam
     return un_pts;
 }
 
-vector<cv::Point2f> FeatureTracker::ptsVelocity(vector<int> &ids, vector<cv::Point2f> &pts, 
+/**
+ * @brief 计算特征点在归一化平面上的速度
+ * @param ids 特征点ID列表
+ * @param pts 当前帧特征点归一化坐标
+ * @param cur_id_pts 输出：当前帧 ID -> 归一化坐标 的映射
+ * @param prev_id_pts 上一帧 ID -> 归一化坐标 的映射
+ * @return 每个特征点的速度 (vx, vy)，单位：归一化坐标/秒
+ *
+ * 通过查找上一帧中相同 ID 的特征点，计算坐标差除以时间差得到速度。
+ * 如果某特征点在前一帧中不存在（新检测到的特征），速度设为 (0, 0)。
+ * 速度信息用于后续滑动窗口中的关键帧筛选和初始化估计。
+ */
+vector<cv::Point2f> FeatureTracker::ptsVelocity(vector<int> &ids, vector<cv::Point2f> &pts,
                                             map<int, cv::Point2f> &cur_id_pts, map<int, cv::Point2f> &prev_id_pts)
 {
     vector<cv::Point2f> pts_velocity;
@@ -415,7 +835,7 @@ vector<cv::Point2f> FeatureTracker::ptsVelocity(vector<int> &ids, vector<cv::Poi
     if (!prev_id_pts.empty())
     {
         double dt = cur_time - prev_time;
-        
+
         for (unsigned int i = 0; i < pts.size(); i++)
         {
             std::map<int, cv::Point2f>::iterator it;
@@ -441,9 +861,23 @@ vector<cv::Point2f> FeatureTracker::ptsVelocity(vector<int> &ids, vector<cv::Poi
     return pts_velocity;
 }
 
-void FeatureTracker::drawTrack(const cv::Mat &imLeft, const cv::Mat &imRight, 
+/**
+ * @brief 绘制特征点跟踪可视化图像
+ * @param imLeft 左目图像
+ * @param imRight 右目图像
+ * @param curLeftIds 当前左目特征点ID
+ * @param curLeftPts 当前左目特征点坐标
+ * @param curRightPts 当前右目特征点坐标
+ * @param prevLeftPtsMap 上一帧左目特征点 ID->坐标 映射
+ *
+ * 可视化内容：
+ * - 左目特征点：颜色从红（新）到绿（跟踪时间长），阈值20帧
+ * - 右目特征点（双目模式）：绿色圆点
+ * - 运动箭头：从当前点指向上一帧对应位置（绿色）
+ */
+void FeatureTracker::drawTrack(const cv::Mat &imLeft, const cv::Mat &imRight,
                                vector<int> &curLeftIds,
-                               vector<cv::Point2f> &curLeftPts, 
+                               vector<cv::Point2f> &curLeftPts,
                                vector<cv::Point2f> &curRightPts,
                                map<int, cv::Point2f> &prevLeftPtsMap)
 {
@@ -471,7 +905,7 @@ void FeatureTracker::drawTrack(const cv::Mat &imLeft, const cv::Mat &imRight,
             //cv::line(imTrack, leftPt, rightPt, cv::Scalar(0, 255, 0), 1, 8, 0);
         }
     }
-    
+
     map<int, cv::Point2f>::iterator mapIt;
     for (size_t i = 0; i < curLeftIds.size(); i++)
     {
@@ -497,49 +931,90 @@ void FeatureTracker::drawTrack(const cv::Mat &imLeft, const cv::Mat &imRight,
 }
 
 
+/**
+ * @brief 设置特征点预测位置，用于加速光流匹配
+ * @param predictPts 预测的3D点映射（ID -> 3D坐标）
+ *
+ * 当后端优化或IMU预积分提供了特征点的3D位置预测时，
+ * 将3D点通过相机模型投影到像素平面作为光流的初始猜测值。
+ * 使用 OPTFLOW_USE_INITIAL_FLOW 标志可以显著提高光流匹配
+ * 在大幅运动或快速旋转场景下的成功率。
+ * 若某特征点没有预测值，则使用其上一帧位置作为默认猜测。
+ */
 void FeatureTracker::setPrediction(map<int, Eigen::Vector3d> &predictPts)
 {
-    hasPrediction = true;
-    predict_pts.clear();
-    predict_pts_debug.clear();
-    map<int, Eigen::Vector3d>::iterator itPredict;
-    for (size_t i = 0; i < ids.size(); i++)
-    {
-        //printf("prevLeftId size %d prevLeftPts size %d\n",(int)prevLeftIds.size(), (int)prevLeftPts.size());
-        int id = ids[i];
-        itPredict = predictPts.find(id);
-        if (itPredict != predictPts.end())
+    if (isPolarMode()) {
+        hasPrediction = true;
+        // 偏振模式下,预测暂时存储为全局,后续可改为 per-channel
+        // 当前简化:设置标志但不做具体投影,光流不使用预测
+    } else {
+        hasPrediction = true;
+        predict_pts.clear();
+        predict_pts_debug.clear();
+        map<int, Eigen::Vector3d>::iterator itPredict;
+        for (size_t i = 0; i < ids.size(); i++)
         {
-            Eigen::Vector2d tmp_uv;
-            m_camera[0]->spaceToPlane(itPredict->second, tmp_uv);
-            predict_pts.push_back(cv::Point2f(tmp_uv.x(), tmp_uv.y()));
-            predict_pts_debug.push_back(cv::Point2f(tmp_uv.x(), tmp_uv.y()));
+            //printf("prevLeftId size %d prevLeftPts size %d\n",(int)prevLeftIds.size(), (int)prevLeftPts.size());
+            int id = ids[i];
+            itPredict = predictPts.find(id);
+            if (itPredict != predictPts.end())
+            {
+                Eigen::Vector2d tmp_uv;
+                m_camera[0]->spaceToPlane(itPredict->second, tmp_uv);
+                predict_pts.push_back(cv::Point2f(tmp_uv.x(), tmp_uv.y()));
+                predict_pts_debug.push_back(cv::Point2f(tmp_uv.x(), tmp_uv.y()));
+            }
+            else
+                predict_pts.push_back(prev_pts[i]);
         }
-        else
-            predict_pts.push_back(prev_pts[i]);
     }
 }
 
 
+/**
+ * @brief 移除被标记为外点的特征点
+ * @param removePtsIds 需要移除的特征点ID集合
+ *
+ * 通常在后端优化（如滑动窗口BA）或基础矩阵RANSAC剔除后调用，
+ * 将判定为外点的特征从跟踪器中删除，防止错误特征影响后续跟踪。
+ * 注意：此处只更新 prev_pts、ids 和 track_cnt，不处理 cur_pts，
+ * 因为外点剔除发生在 trackImage 之后、下一帧跟踪之前。
+ */
 void FeatureTracker::removeOutliers(set<int> &removePtsIds)
 {
-    std::set<int>::iterator itSet;
-    vector<uchar> status;
-    for (size_t i = 0; i < ids.size(); i++)
-    {
-        itSet = removePtsIds.find(ids[i]);
-        if(itSet != removePtsIds.end())
-            status.push_back(0);
-        else
-            status.push_back(1);
-    }
+    if (isPolarMode()) {
+        for (auto& ch : channels) {
+            vector<uchar> status;
+            for (size_t i = 0; i < ch.ids.size(); i++) {
+                if (removePtsIds.count(ch.ids[i]))
+                    status.push_back(0);
+                else
+                    status.push_back(1);
+            }
+            reduceVector(ch.prev_pts, status);
+            reduceVector(ch.ids, status);
+            reduceVector(ch.track_cnt, status);
+        }
+    } else {
+        std::set<int>::iterator itSet;
+        vector<uchar> status;
+        for (size_t i = 0; i < ids.size(); i++)
+        {
+            itSet = removePtsIds.find(ids[i]);
+            if(itSet != removePtsIds.end())
+                status.push_back(0);
+            else
+                status.push_back(1);
+        }
 
-    reduceVector(prev_pts, status);
-    reduceVector(ids, status);
-    reduceVector(track_cnt, status);
+        reduceVector(prev_pts, status);
+        reduceVector(ids, status);
+        reduceVector(track_cnt, status);
+    }
 }
 
 
+/** @brief 返回跟踪可视化图像，供 ROS 话题发布或调试查看 */
 cv::Mat FeatureTracker::getTrackImage()
 {
     return imTrack;
