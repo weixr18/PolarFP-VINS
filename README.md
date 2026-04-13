@@ -1,13 +1,15 @@
-# PolarFP-VINS
+# PolarFP-VINS:**基于偏振的视觉惯性导航系统**
 
-基于偏振视觉的 VINS（Visual-Inertial Navigation System），在 [VINS-Fusion](https://github.com/HKUST-Aerial-Robotics/VINS-Fusion) 基础上扩展，利用偏振相机提供的偏振信息（Stokes 参数、偏振度 DoP、偏振角 AoP）替代/增强传统强度特征，**在暗光条件下仍能实现鲁棒的视觉惯性里程计估计**。
+在 [VINS-Fusion](https://github.com/HKUST-Aerial-Robotics/VINS-Fusion) 基础上进行系统性改进，核心创新在于**将偏振相机提供的多通道偏振信息（S0 强度、DoP 偏振度、AoP 偏振角）引入 VINS 前端特征跟踪管线**，使视觉惯性里程计在低照度、高动态等传统强度视觉失效的恶劣条件下仍能保持鲁棒跟踪。
 
-## 核心特性
+> 本项目为科研性质的算法验证平台，旨在探索偏振信息在 VSLAM 前端中的应用潜力。
 
-- **偏振特征跟踪**：从偏振相机 2×2 微偏振片阵列原始图像中解码 S0（总强度）、DoP（偏振度）、AoP（偏振角），支持多通道组合跟踪（如 `s0,dop,aopsin,aopcos`）
-- **暗光鲁棒性**：偏振信息在低照度下比纯强度信息更稳定
-- **VINS-Fusion 兼容**：保持与 VINS-Fusion 相同的滑动窗口优化架构（IMU 预积分 + 视觉重投影误差 + 边缘化）
-- **单目/双目 + IMU**：支持单目和双目相机配置
+## 创新点
+
+- **多通道偏振特征跟踪** — 从偏振相机 2×2 微偏振片阵列原始图像中解码 Stokes 参数，同时提取 S0（总强度）、DoP（偏振度）、sin(AoP)/cos(AoP)（偏振角）四个通道，每个通道独立运行 VINS 的成熟检测/跟踪管线（GFTT + LK 光流 + 双向检查 + setMask），最后合并输出给后端
+- **可配置图像滤波** — 8-bit 量化后可选地对 DoP/sin/cos 通道施加双边滤波或导向滤波（以 S0 为引导图），抑制偏振传感器特有的噪声，提升暗光下 GFTT 特征检测稳定性
+- **后端零侵入** — 后端滑动窗口优化器（IMU 预积分 + 视觉重投影误差 + 边缘化）完全不知道特征点来自哪个偏振通道，所有偏振信息在前端融合，保持与 VINS-Fusion 后端的完全兼容
+- **暗光鲁棒性** — 偏振信息（特别是 DoP 和 AoP）在低照度下比纯强度信息更稳定，能捕获强度图中不可见的纹理和边缘
 
 ## 项目结构
 
@@ -22,11 +24,17 @@ PolarFP-VINS/
 ├── vins_estimator/            # VINS 估计器主包
 │   ├── CMakeLists.txt
 │   ├── cmake/
+│   ├── docs/                  # 重构文档
+│   │   ├── compare_polarfpv1_1_vins.md    # V1.1 与原版 VINS-Fusion 对比分析
+│   │   └── polarfp_v2_reconstruction_plan.md   # V2 前端重构计划
 │   └── src/
-│       ├── estimator/         # 滑动窗口状态估计器
-│       ├── factor/            # Ceres 因子（IMU 预积分、投影误差、边缘化）
-│       ├── featureTracker/    # 特征跟踪器 + 偏振通道解码
-│       ├── initial/           # 初始化（SFM、外参标定、陀螺仪对齐）
+│       ├── estimator/         # 滑动窗口状态估计器（后端，未修改）
+│       ├── factor/            # Ceres 因子（IMU 预积分、投影误差、边缘化，未修改）
+│       ├── featureTracker/    # 特征跟踪器 + 偏振通道解码（核心修改区域）
+│       │   ├── feature_tracker.h/cpp     # 主跟踪器，V2 重构为多通道
+│       │   ├── PolarChannel.h/cpp        # 偏振解码 + 可选滤波
+│       │   └── ...
+│       ├── initial/           # 初始化（SFM、外参标定、陀螺仪对齐，未修改）
 │       └── utility/           # 可视化工具
 └── README.md
 ```
@@ -42,7 +50,7 @@ PolarFP-VINS/
 
 ```bash
 cd ~/ws/vi_catkin_ws
-catkin build polarfp_vins   # 或 catkin_make
+catkin_make
 source devel/setup.bash
 ```
 
@@ -58,7 +66,7 @@ YAML 配置文件中的关键字段：
 
 | 参数 | 说明 |
 |------|------|
-| `use_polar` | 是否启用偏振通道（1=启用） |
+| `use_polar` | 是否启用偏振通道（1=启用，0=退化为原始 VINS-Fusion 行为） |
 | `polar_channels` | 使用的偏振通道组合，如 `"s0,dop,aopsin,aopcos"` |
 | `polar_filter_type` | 滤波器类型：0=无，1=双边滤波，2=导向滤波 |
 | `polar_bilateral_d` | 双边滤波邻域直径（filter_type=1 时） |
@@ -66,9 +74,9 @@ YAML 配置文件中的关键字段：
 | `polar_bilateral_sigma_space` | 双边滤波空间域标准差（filter_type=1 时） |
 | `polar_guided_radius` | 导向滤波窗口半径（filter_type=2 时） |
 | `polar_guided_eps` | 导向滤波正则化参数（filter_type=2 时） |
-| `num_of_cam` | 相机数量（1=单目，2=双目） |
+| `num_of_cam` | 相机数量（1=单目） |
 | `imu` | 是否使用 IMU |
-| `max_cnt` | 跟踪特征点最大数量 |
+| `max_cnt` | 每通道跟踪特征点最大数量 |
 | `freq` | 跟踪结果发布频率（Hz） |
 
 ## 图像滤波
@@ -93,3 +101,11 @@ rosrun polarfp_vins test_filter
 ```
 
 支持 `w` 切换滤波方法，`+/-` 调导向滤波半径，`[/]` 调 eps，`b/B` 调双边 sigmaColor，`n/N` 调 NLM 强度。
+
+## 迭代历史
+
+| 版本 | 状态 | 说明 |
+|------|------|------|
+| V0 (`663e403`) | 基线 | 从 VINS-Fusion 重置，编译通过，功能等价于原版 |
+| V2 (`1dde542`) | 当前 | 最小化改动策略：复用 VINS 成熟管线，每通道独立运行后合并结果 |
+| V2.1 (`e304552`) | 当前 | 在 V2 基础上加入可配置图像滤波模块 |
