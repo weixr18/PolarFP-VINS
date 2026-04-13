@@ -62,6 +62,43 @@ struct PolarChannelResult {
 };
 
 /**
+ * @brief 滤波器类型枚举
+ *
+ * 用于在 raw2polar() 中选择不同的去噪滤波算法。
+ */
+enum PolarFilterType {
+    FILTER_NONE = 0,
+    FILTER_BILATERAL = 1,
+    FILTER_GUIDED = 2,
+    FILTER_NLM = 3,
+};
+
+/**
+ * @brief 偏振通道滤波配置参数
+ *
+ * 用于在 raw2polar() 输出的 DoP/sin/cos 通道上施加滤波，
+ * 降低低光照条件下的噪声，提升特征点检测稳定性。
+ */
+struct PolarFilterConfig {
+    // 滤波器类型选择
+    PolarFilterType filter_type = FILTER_NONE;  ///< 滤波器类型（默认不启用）
+
+    // 双边滤波参数
+    int bilateral_d = 9;                ///< 邻域直径
+    double bilateral_sigmaColor = 200;  ///< 颜色空间标准差
+    double bilateral_sigmaSpace = 30;   ///< 空间域标准差
+
+    // 导向滤波参数
+    int guided_radius = 4;              ///< 局部窗口半径（核大小 = 2*radius+1）
+    double guided_eps = 0.01;           ///< 正则化参数，越大平滑越强
+
+    // NLM（非局部均值）滤波参数
+    float nlm_h = 50.0f;                ///< 滤波强度
+    int nlm_template = 5;               ///< 模板窗口大小
+    int nlm_search = 21;                ///< 搜索窗口大小
+};
+
+/**
  * @brief 核心函数：将微偏振片阵列原始图像转换为 Stokes 参数
  *
  * 处理流程：
@@ -72,10 +109,29 @@ struct PolarChannelResult {
  *   5. 将 AoP 映射为 HSV 彩色图以便可视化
  *   6. 对 DoP 做百分位归一化
  *   7. 量化输出为 8bit 图像
+ *   8. 若 cfg.filter_type != FILTER_NONE，对 DoP/sin/cos 施加指定类型的滤波
  *
  * @param img_raw 输入原始偏振图像（单通道 8bit，2x2 超像素排布）
+ * @param cfg     滤波配置参数（默认不启用滤波）
  * @return PolarChannelResult 包含所有通道和可视化结果
  */
-PolarChannelResult raw2polar(const cv::Mat& img_raw);
+
+/**
+ * @brief 单通道导向滤波（Guided Filter）
+ *
+ * 以引导图 I 的局部线性模型来滤波输入图 p。在每个局部窗口内，
+ * 输出 q = a*I + b，使得 q 接近 p 且平滑。由于使用 S0（强度图）
+ * 作为引导图，可以在平滑噪声的同时保留与强度边缘对齐的偏振
+ * 通道边缘，避免 DoP/AoP 在物体边界处模糊。
+ *
+ * @param I   引导图像（CV_64F，通常使用 S0 强度图）
+ * @param p   待滤波图像（CV_64F，如 DoP / sin(AoP) / cos(AoP)）
+ * @param r   局部窗口半径（核大小 = 2r+1）
+ * @param eps 正则化参数，越大平滑越强
+ * @return    滤波后图像（CV_64F）
+ */
+cv::Mat guidedFilterSingle(const cv::Mat& I, const cv::Mat& p, int r, double eps);
+
+PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cfg = {});
 
 #endif // _POLAR_CHANNEL_H

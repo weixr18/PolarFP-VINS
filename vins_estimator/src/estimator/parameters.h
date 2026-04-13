@@ -18,6 +18,8 @@
 #include <fstream>
 #include <map>
 
+#include "../featureTracker/PolarChannel.h"
+
 using namespace std;
 
 const double FOCAL_LENGTH = 460.0;
@@ -67,6 +69,7 @@ extern int FLOW_BACK;
 // Polar mode parameters
 extern int USE_POLAR;
 extern std::vector<std::string> POLAR_CHANNELS;
+extern PolarFilterConfig POLAR_FILTER_CFG;
 
 void readParameters(std::string config_file);
 

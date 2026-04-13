@@ -50,6 +50,7 @@ int FLOW_BACK;
 // Polar mode
 int USE_POLAR = 0;
 std::vector<std::string> POLAR_CHANNELS;
+PolarFilterConfig POLAR_FILTER_CFG;
 
 
 template <typename T>
@@ -222,6 +223,46 @@ void readParameters(std::string config_file)
         ROS_INFO("Polar mode enabled, channels: %zu", POLAR_CHANNELS.size());
         for (const auto& ch : POLAR_CHANNELS)
             ROS_INFO("  channel: %s", ch.c_str());
+
+        // 偏振通道滤波参数
+        if (!fsSettings["polar_filter_type"].empty())
+            POLAR_FILTER_CFG.filter_type = static_cast<PolarFilterType>((int)fsSettings["polar_filter_type"]);
+
+        // 双边滤波参数
+        if (POLAR_FILTER_CFG.filter_type == FILTER_BILATERAL) {
+            if (!fsSettings["polar_bilateral_d"].empty())
+                POLAR_FILTER_CFG.bilateral_d = (int)fsSettings["polar_bilateral_d"];
+            if (!fsSettings["polar_bilateral_sigma_color"].empty())
+                POLAR_FILTER_CFG.bilateral_sigmaColor = (double)fsSettings["polar_bilateral_sigma_color"];
+            if (!fsSettings["polar_bilateral_sigma_space"].empty())
+                POLAR_FILTER_CFG.bilateral_sigmaSpace = (double)fsSettings["polar_bilateral_sigma_space"];
+            ROS_INFO("[PolarFP] Bilateral filter: d=%d sigmaColor=%.1f sigmaSpace=%.1f",
+                     POLAR_FILTER_CFG.bilateral_d, POLAR_FILTER_CFG.bilateral_sigmaColor,
+                     POLAR_FILTER_CFG.bilateral_sigmaSpace);
+        }
+
+        // 导向滤波参数
+        if (POLAR_FILTER_CFG.filter_type == FILTER_GUIDED) {
+            if (!fsSettings["polar_guided_radius"].empty())
+                POLAR_FILTER_CFG.guided_radius = (int)fsSettings["polar_guided_radius"];
+            if (!fsSettings["polar_guided_eps"].empty())
+                POLAR_FILTER_CFG.guided_eps = (double)fsSettings["polar_guided_eps"];
+            ROS_INFO("[PolarFP] Guided filter: radius=%d eps=%.4f",
+                     POLAR_FILTER_CFG.guided_radius, POLAR_FILTER_CFG.guided_eps);
+        }
+
+        // NLM 滤波参数
+        if (POLAR_FILTER_CFG.filter_type == FILTER_NLM) {
+            if (!fsSettings["polar_nlm_h"].empty())
+                POLAR_FILTER_CFG.nlm_h = (float)(double)fsSettings["polar_nlm_h"];
+            if (!fsSettings["polar_nlm_template"].empty())
+                POLAR_FILTER_CFG.nlm_template = (int)fsSettings["polar_nlm_template"];
+            if (!fsSettings["polar_nlm_search"].empty())
+                POLAR_FILTER_CFG.nlm_search = (int)fsSettings["polar_nlm_search"];
+            ROS_INFO("[PolarFP] NLM filter: h=%.1f template=%d search=%d",
+                     POLAR_FILTER_CFG.nlm_h, POLAR_FILTER_CFG.nlm_template,
+                     POLAR_FILTER_CFG.nlm_search);
+        }
     }
 
     fsSettings.release();

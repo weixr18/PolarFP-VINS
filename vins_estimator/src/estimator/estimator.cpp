@@ -113,6 +113,7 @@ void Estimator::setParameter()
     // 配置偏振通道
     if (USE_POLAR) {
         featureTracker.setPolarChannels(POLAR_CHANNELS);
+        featureTracker.setPolarFilterConfig(POLAR_FILTER_CFG);
     }
 
     std::cout << "MULTIPLE_THREAD is " << MULTIPLE_THREAD << '\n';

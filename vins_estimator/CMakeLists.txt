@@ -59,3 +59,8 @@ target_link_libraries(vins_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRAR
 add_executable(${PROJECT_PREFIX}_node src/rosNodeTest.cpp)
 target_link_libraries(${PROJECT_PREFIX}_node vins_lib)
 
+add_executable(test_nlm_filter src/test/test_nlm_filter.cpp)
+target_link_libraries(test_nlm_filter vins_lib)
+
+# add_executable(test_guide_filter src/test/test_guide_filter.cpp)
+# target_link_libraries(test_guide_filter vins_lib)

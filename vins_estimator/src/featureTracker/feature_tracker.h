@@ -216,6 +216,12 @@ public:
     /** @brief 判断是否处于偏振模式 */
     bool isPolarMode() const { return polar_mode; }
 
+    /**
+     * @brief 设置偏振通道滤波配置
+     * @param cfg 滤波参数（开关 + 双边滤波参数）
+     */
+    void setPolarFilterConfig(const PolarFilterConfig& cfg);
+
     // ---- 成员变量 ----
     int row, col;                         ///< 图像行数和列数
     cv::Mat imTrack;                      ///< 用于可视化展示的跟踪结果图像
@@ -243,6 +249,7 @@ public:
     // ---- 偏振模式特有成员 ----
     vector<ChannelState> channels;        ///< 启用的通道状态列表
     bool polar_mode = false;              ///< 是否处于偏振模式
+    PolarFilterConfig polar_filter_cfg;   ///< 偏振通道滤波配置
 
 private:
     /**

@@ -146,6 +146,19 @@ void FeatureTracker::setPolarChannels(const vector<string>& channel_names)
     ROS_INFO("[PolarFP] setPolarChannels: %zu channels", channels.size());
 }
 
+/** @brief 设置偏振通道滤波配置 */
+void FeatureTracker::setPolarFilterConfig(const PolarFilterConfig& cfg)
+{
+    polar_filter_cfg = cfg;
+    if (cfg.filter_type == FILTER_BILATERAL) {
+        ROS_INFO("[PolarFP] Bilateral filter: d=%d sigmaColor=%.1f sigmaSpace=%.1f",
+                 cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
+    } else if (cfg.filter_type == FILTER_GUIDED) {
+        ROS_INFO("[PolarFP] Guided filter: radius=%d eps=%.4f",
+                 cfg.guided_radius, cfg.guided_eps);
+    }
+}
+
 /** @brief 从 PolarChannelResult 提取指定通道的 8bit 图像 */
 cv::Mat FeatureTracker::getChannelImage(const PolarChannelResult& result, const string& channel)
 {
@@ -235,22 +248,32 @@ void FeatureTracker::drawTrackPolar()
 {
     if (channels.empty()) return;
 
-    static const vector<cv::Scalar> channelColors = {
-        cv::Scalar(0, 255, 255),  // yellow - s0
-        cv::Scalar(0, 255, 0),    // green  - dop
-        cv::Scalar(0, 0, 255),    // red    - aopsin
-        cv::Scalar(255, 0, 0)     // blue   - aopcos
+    // Per-channel HSV: {H(0-179), S, V}
+    // H from original channel color; S varies with track_cnt; V=255
+    static const vector<cv::Vec3b> channelHSV = {
+        { 30, 255, 255 },  // yellow - s0
+        { 60, 255, 255 },  // green  - dop
+        {  0, 255, 255 },  // red    - aopsin
+        { 120, 255, 255 }, // blue   - aopcos
+    };
+
+    auto getColorByTrackCnt = [](int hue, int trackCnt) -> cv::Scalar {
+        int sat = std::min(255, trackCnt * 255 / 20);
+        cv::Mat hsv(1, 1, CV_8UC3, cv::Vec3b((uchar)hue, (uchar)sat, 255));
+        cv::Mat bgr;
+        cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+        cv::Vec3b bgrVal = bgr.at<cv::Vec3b>(0, 0);
+        return cv::Scalar(bgrVal[0], bgrVal[1], bgrVal[2]);
     };
 
     if (channels.size() == 1) {
         // 单通道:直接在该图像上绘制
         const auto& ch = channels[0];
         if (ch.cur_img.empty()) return;
-        cv::cvtColor(ch.cur_img, imTrack, cv::COLOR_GRAY2RGB);
+        cv::cvtColor(ch.cur_img, imTrack, cv::COLOR_GRAY2BGR);
         for (size_t j = 0; j < ch.cur_pts.size(); j++) {
-            double len = std::min(1.0, 1.0 * ch.track_cnt[j] / 20);
-            cv::circle(imTrack, ch.cur_pts[j], 2,
-                       cv::Scalar(255 * (1 - len), 0, 255 * len), 2);
+            cv::Scalar color = getColorByTrackCnt(channelHSV[0][0], ch.track_cnt[j]);
+            cv::circle(imTrack, ch.cur_pts[j], 2, color, 2);
         }
     } else {
         // 多通道:2x2 网格拼接
@@ -269,19 +292,21 @@ void FeatureTracker::drawTrackPolar()
             cv::Mat roi = imTrack(cv::Rect(gridCol * w, gridRow * h, w, h));
             chBGR.copyTo(roi);
 
-            // 绘制特征点
-            cv::Scalar color = channelColors[c % channelColors.size()];
+            // 绘制特征点(饱和度随跟踪帧数变化)
+            int hue = channelHSV[c][0];
             for (size_t j = 0; j < ch.cur_pts.size(); j++) {
                 cv::Point2f pt(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
+                cv::Scalar color = getColorByTrackCnt(hue, ch.track_cnt[j]);
                 cv::circle(imTrack, pt, 2, color, 2);
             }
-            // 绘制轨迹箭头
+            // 绘制轨迹箭头(固定通道颜色)
             for (size_t j = 0; j < ch.cur_pts.size(); j++) {
                 auto it = ch.prevLeftPtsMap.find(ch.ids[j]);
                 if (it != ch.prevLeftPtsMap.end()) {
                     cv::Point2f from(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
                     cv::Point2f to(it->second.x + gridCol * w, it->second.y + gridRow * h);
-                    cv::arrowedLine(imTrack, from, to, cv::Scalar(0, 255, 0), 1, 8, 0, 0.2);
+                    cv::Scalar fullColor = getColorByTrackCnt(hue, 20);
+                    cv::arrowedLine(imTrack, from, to, fullColor, 1, 8, 0, 0.2);
                 }
             }
         }
@@ -300,7 +325,7 @@ FeatureTracker::trackImagePolar(double _cur_time)
     // =============================================
     // 1. 偏振图像分解: raw → 多通道
     // =============================================
-    PolarChannelResult polar_result = raw2polar(cur_img);
+    PolarChannelResult polar_result = raw2polar(cur_img, polar_filter_cfg);
 
     for (auto& ch : channels) {
         ch.cur_img = getChannelImage(polar_result, ch.name);

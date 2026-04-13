@@ -17,6 +17,36 @@
 #include <algorithm>
 
 /**
+ * @brief 盒滤波（均值滤波）辅助函数，使用 BORDER_REPLICATE 复制边界
+ */
+static cv::Mat boxFilter2D(const cv::Mat& src, int radius) {
+    cv::Mat dst;
+    cv::boxFilter(src, dst, -1, cv::Size(radius, radius), cv::Point(-1, -1), true, cv::BORDER_REPLICATE);
+    return dst;
+}
+
+/**
+ * @brief 单通道导向滤波实现
+ */
+cv::Mat guidedFilterSingle(const cv::Mat& I, const cv::Mat& p, int r, double eps) {
+    cv::Mat mean_I  = boxFilter2D(I, 2 * r + 1);
+    cv::Mat mean_p  = boxFilter2D(p, 2 * r + 1);
+    cv::Mat mean_II = boxFilter2D(I.mul(I), 2 * r + 1);
+    cv::Mat mean_Ip = boxFilter2D(I.mul(p), 2 * r + 1);
+
+    cv::Mat cov_Ip = mean_Ip - mean_I.mul(mean_p);
+    cv::Mat var_I  = mean_II - mean_I.mul(mean_I);
+
+    cv::Mat a = cov_Ip / (var_I + eps);
+    cv::Mat b = mean_p - a.mul(mean_I);
+
+    cv::Mat mean_a = boxFilter2D(a, 2 * r + 1);
+    cv::Mat mean_b = boxFilter2D(b, 2 * r + 1);
+
+    return mean_a.mul(I) + mean_b;
+}
+
+/**
  * @brief 计算矩阵的指定百分位值
  *
  * 将矩阵展平为一维向量，排序后取指定百分位位置的元素。
@@ -130,7 +160,7 @@ cv::Mat _raw_chnl_to_rgb(const std::vector<cv::Mat>& img_xx) {
  * @param img_raw 输入原始偏振图像（单通道 8bit）
  * @return PolarChannelResult 包含所有计算结果和可视化
  */
-PolarChannelResult raw2polar(const cv::Mat& img_raw) {
+PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cfg) {
     assert(img_raw.channels() == 1 && img_raw.dims == 2);
 
     int new_rows = img_raw.rows / 4;
@@ -159,10 +189,14 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw) {
     };
 
     // 采样 4 个偏振角度的子图像
-    auto [img_90_gray, img_90_rgb] = sample_polar_channels(0, 0, 2, 2);  // 90°
-    auto [img_45_gray, img_45_rgb] = sample_polar_channels(0, 1, 2, 3);  // 45°
-    auto [img_135_gray, img_135_rgb] = sample_polar_channels(1, 0, 3, 2); // 135°
-    auto [img_0_gray, img_0_rgb] = sample_polar_channels(1, 1, 3, 3);    // 0°
+    cv::Mat img_90_gray, img_90_rgb;
+    cv::Mat img_45_gray, img_45_rgb;
+    cv::Mat img_135_gray, img_135_rgb;
+    cv::Mat img_0_gray, img_0_rgb;
+    std::tie(img_90_gray, img_90_rgb) = sample_polar_channels(0, 0, 2, 2);    // 90°
+    std::tie(img_45_gray, img_45_rgb) = sample_polar_channels(0, 1, 2, 3);    // 45°
+    std::tie(img_135_gray, img_135_rgb) = sample_polar_channels(1, 0, 3, 2);  // 135°
+    std::tie(img_0_gray, img_0_rgb) = sample_polar_channels(1, 1, 3, 3);      // 0°
 
     // 计算 Stokes 向量
     cv::Mat S_0 = (img_90_gray + img_45_gray + img_135_gray + img_0_gray) / 4.0;
@@ -212,12 +246,11 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw) {
     cosaop.setTo(0.0, MASK);
     dop.setTo(0.0, MASK);
 
-    // DoP 百分位归一化：将第 99 百分位映射为 1.0，去除异常高值
-    double max_dop = _calculatePercentile(dop, DOP_PERCENTILE);
-    cv::min(dop, max_dop, dop);
-    if (max_dop > 1.0) {
-        dop /= max_dop;
-    }
+    // DoP mask：去除异常高值
+    cv::Mat MASK_2 = dop > 0.999;
+    sinaop.setTo(0.0, MASK_2);
+    cosaop.setTo(0.0, MASK_2);
+    dop.setTo(0.0, MASK_2);
 
     // 量化输出为 8bit 图像
     cv::Mat dop_img, sin_img, cos_img, S0_img;
@@ -225,6 +258,39 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw) {
     sinaop.convertTo(sin_img, CV_8U, 127.5, 127.5); // sin: [-1,1] → [0,255]
     cosaop.convertTo(cos_img, CV_8U, 127.5, 127.5); // cos: [-1,1] → [0,255]
     S_0.convertTo(S0_img, CV_8U);                   // S0: 直接截断
+
+    // 可选：对 DoP/sin/cos 施加滤波，降低低光照噪声
+    if (cfg.filter_type == FILTER_BILATERAL) {
+        cv::Mat dop_filt, sin_filt, cos_filt;
+        cv::bilateralFilter(dop_img, dop_filt, cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
+        cv::bilateralFilter(sin_img, sin_filt, cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
+        cv::bilateralFilter(cos_img, cos_filt, cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
+        dop_img = dop_filt;
+        sin_img = sin_filt;
+        cos_img = cos_filt;
+    } else if (cfg.filter_type == FILTER_GUIDED) {
+        cv::Mat dop_f, sin_f, cos_f, s0_f;
+        dop_img.convertTo(dop_f, CV_64F, 1.0 / 255.0);
+        sin_img.convertTo(sin_f, CV_64F, 1.0 / 255.0);
+        cos_img.convertTo(cos_f, CV_64F, 1.0 / 255.0);
+        S0_img.convertTo(s0_f, CV_64F, 1.0 / 255.0);
+
+        cv::Mat dop_g = guidedFilterSingle(s0_f, dop_f, cfg.guided_radius, cfg.guided_eps);
+        cv::Mat sin_g = guidedFilterSingle(s0_f, sin_f, cfg.guided_radius, cfg.guided_eps);
+        cv::Mat cos_g = guidedFilterSingle(s0_f, cos_f, cfg.guided_radius, cfg.guided_eps);
+
+        dop_g.convertTo(dop_img, CV_8U, 255.0);
+        sin_g.convertTo(sin_img, CV_8U, 255.0);
+        cos_g.convertTo(cos_img, CV_8U, 255.0);
+    } else if (cfg.filter_type == FILTER_NLM) {
+        cv::Mat dop_nlm, sin_nlm, cos_nlm;
+        cv::fastNlMeansDenoising(dop_img, dop_nlm, cfg.nlm_h, cfg.nlm_template, cfg.nlm_search);
+        cv::fastNlMeansDenoising(sin_img, sin_nlm, cfg.nlm_h, cfg.nlm_template, cfg.nlm_search);
+        cv::fastNlMeansDenoising(cos_img, cos_nlm, cfg.nlm_h, cfg.nlm_template, cfg.nlm_search);
+        dop_img = dop_nlm;
+        sin_img = sin_nlm;
+        cos_img = cos_nlm;
+    }
 
     // 组装结果
     PolarChannelResult result;
