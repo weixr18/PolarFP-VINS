@@ -1,3 +1,12 @@
+/*******************************************************
+ * Copyright (C) 2026, Bionic Intelligence Research Team, Beihang University
+ *
+ * This file is part of PolarFP-VINS.
+ * Auther: Wei Xinran (github.com/weixr18; weixr0605@sina.com)
+ * Licensed under the GNU General Public License v3.0;
+ * you may not use this file except in compliance with the License.
+ *******************************************************/
+
 /**
  * @file PolarChannel.cpp
  * @brief PolarChannel.h 的实现文件。

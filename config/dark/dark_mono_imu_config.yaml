@@ -21,14 +21,30 @@ polar_bilateral_sigma_space: 30
 polar_guided_radius: 4
 polar_guided_eps: 0.01
 
+# 特征检测器/匹配器配置
+feature_detector_type: 0      # 0=GFTT, 1=FAST
+fast_threshold: 20
+fast_nonmax_suppression: 1
 
+feature_matcher_type: 0       # 0=LK_FLOW, 1=BRIEF_FLANN
+brief_descriptor_bytes: 32
+flann_lsh_tables: 20
+flann_lsh_key_size: 20
+flann_multi_probe: 20
+brief_match_dist_ratio: 0.75
+
+max_cnt: 150            # max feature number in feature tracking
+min_dist: 20            # min distance between two features 
+F_threshold: 1.0        # ransac threshold (pixel)
+
+# topic and paths
 imu_topic: "/ahrs_driver_node/imu_data"
 image0_topic: "/arena_cam_qc2/image_raw"
 image1_topic: "/arena_cam_qc1/image_raw"
 output_path: "/home/dhz/SLAM/output/VINS-Fusion"
 output_name: "dark_2026-03-29-21-05-45_MI_all"
 
-
+# camera calibration
 cam0_calib: "TRI050S-spin4.yaml"
 cam1_calib: "TRI050S-spin4.yaml"
 image_width: 612
@@ -53,10 +69,7 @@ body_T_cam0: !!opencv-matrix # T_ic
 multiple_thread: 1
 
 #feature traker paprameters
-max_cnt: 150            # max feature number in feature tracking
-min_dist: 30            # min distance between two features 
 freq: 10                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
-F_threshold: 1.0        # ransac threshold (pixel)
 show_track: 1           # publish tracking image as topic
 flow_back: 1            # perform forward and backward optical flow to improve feature tracking accuracy
 

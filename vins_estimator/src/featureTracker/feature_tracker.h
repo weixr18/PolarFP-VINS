@@ -39,6 +39,8 @@
 #include "../estimator/parameters.h"
 #include "../utility/tic_toc.h"
 #include "PolarChannel.h"
+#include "feature_tracker_detector.h"
+#include "feature_tracker_matcher.h"
 
 using namespace std;
 using namespace camodocal;
@@ -73,6 +75,11 @@ struct ChannelState {
     double cur_time = 0;                        ///< 当前帧时间戳
     double prev_time = 0;                       ///< 上一帧时间戳
     cv::Mat mask;                               ///< 空间分布掩码
+
+    // BRIEF/ORB 描述子(上一帧), 扁平存储: [feat0_desc, feat1_desc, ...]
+    // 每个描述子 brief_bytes 字节。LK 模式下为空。
+    std::vector<uchar> prev_brief_desc;
+    int brief_bytes = 32;
 
     ChannelState() = default;
     explicit ChannelState(const string& n) : name(n) {}
@@ -222,6 +229,9 @@ public:
      */
     void setPolarFilterConfig(const PolarFilterConfig& cfg);
 
+    /** @brief 根据配置初始化检测器和匹配器 */
+    void initDetectorAndMatcher();
+
     // ---- 成员变量 ----
     int row, col;                         ///< 图像行数和列数
     cv::Mat imTrack;                      ///< 用于可视化展示的跟踪结果图像
@@ -252,12 +262,6 @@ public:
     PolarFilterConfig polar_filter_cfg;   ///< 偏振通道滤波配置
 
 private:
-    /**
-     * @brief 偏振模式跟踪管线
-     * @return 标准 VINS 格式特征帧
-     */
-    map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> trackImagePolar(double _cur_time);
-
     /** @brief 从 PolarChannelResult 提取指定通道的 8bit 图像 */
     static cv::Mat getChannelImage(const PolarChannelResult& result, const string& channel);
 
@@ -267,9 +271,9 @@ private:
     /** @brief 边界检查的通道版本 */
     static bool inBorderImpl(const ChannelState& ch, const cv::Point2f& pt);
 
-    /** @brief 速度计算的通道版本 */
-    vector<cv::Point2f> ptsVelocityForChannel(ChannelState& ch);
-
     /** @brief 多通道可视化 */
     void drawTrackPolar();
+
+    std::shared_ptr<FeatureDetector> detector_;
+    std::shared_ptr<FeatureMatcher> matcher_;
 };

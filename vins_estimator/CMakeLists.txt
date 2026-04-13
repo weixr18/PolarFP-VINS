@@ -52,6 +52,8 @@ add_library(vins_lib
     src/initial/initial_sfm.cpp
     src/initial/initial_ex_rotation.cpp
     src/featureTracker/feature_tracker.cpp
+    src/featureTracker/feature_tracker_detector.cpp
+    src/featureTracker/feature_tracker_matcher.cpp
     src/featureTracker/PolarChannel.cpp)
 target_link_libraries(vins_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
 

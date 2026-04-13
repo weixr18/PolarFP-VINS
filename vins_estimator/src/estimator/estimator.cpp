@@ -114,6 +114,7 @@ void Estimator::setParameter()
     if (USE_POLAR) {
         featureTracker.setPolarChannels(POLAR_CHANNELS);
         featureTracker.setPolarFilterConfig(POLAR_FILTER_CFG);
+        featureTracker.initDetectorAndMatcher();
     }
 
     std::cout << "MULTIPLE_THREAD is " << MULTIPLE_THREAD << '\n';

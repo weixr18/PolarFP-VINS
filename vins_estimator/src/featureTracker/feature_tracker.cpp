@@ -10,6 +10,8 @@
  *******************************************************/
 
 #include "feature_tracker.h"
+#include "feature_tracker_detector.h"
+#include "feature_tracker_matcher.h"
 
 /**
  * @brief 判断特征点是否在图像边界内
@@ -27,14 +29,7 @@ bool FeatureTracker::inBorder(const cv::Point2f &pt)
     return BORDER_SIZE <= img_x && img_x < col - BORDER_SIZE && BORDER_SIZE <= img_y && img_y < row - BORDER_SIZE;
 }
 
-/** @brief 计算两个像素点之间的欧氏距离（自由函数，已被成员函数 distance 替代） */
-double distance(cv::Point2f pt1, cv::Point2f pt2)
-{
-    //printf("pt1: %f %f pt2: %f %f\n", pt1.x, pt1.y, pt2.x, pt2.y);
-    double dx = pt1.x - pt2.x;
-    double dy = pt1.y - pt2.y;
-    return sqrt(dx * dx + dy * dy);
-}
+// (global distance function removed — replaced by FeatureTracker::distance member function)
 
 /**
  * @brief 根据 status 状态压缩 Point2f 向量
@@ -132,6 +127,45 @@ double FeatureTracker::distance(cv::Point2f &pt1, cv::Point2f &pt2)
 }
 
 // =============================================
+// 检测器/匹配器初始化
+// =============================================
+
+/** @brief 根据全局配置初始化检测器和匹配器 */
+void FeatureTracker::initDetectorAndMatcher()
+{
+    DetectorConfig det_cfg;
+    if (FEATURE_DETECTOR_TYPE == 1) {
+        det_cfg.type = DetectorType::FAST;
+        det_cfg.fast_threshold = FAST_THRESHOLD;
+        det_cfg.fast_nonmax = FAST_NONMAX_SUPPRESSION;
+    } else {
+        det_cfg.type = DetectorType::GFTT;
+        det_cfg.gftt_quality = 0.01;
+        det_cfg.min_dist = MIN_DIST;
+    }
+    detector_ = createDetector(det_cfg);
+    ROS_INFO("[PolarFP] Detector: %s", detector_->name().c_str());
+
+    MatcherConfig match_cfg;
+    if (FEATURE_MATCHER_TYPE == 1) {
+        match_cfg.type = MatcherType::BRIEF_FLANN;
+        match_cfg.brief_bytes = BRIEF_DESCRIPTOR_BYTES;
+        match_cfg.flann_lsh_tables = FLANN_LSH_TABLES;
+        match_cfg.flann_lsh_key_size = FLANN_LSH_KEY_SIZE;
+        match_cfg.flann_multi_probe = FLANN_MULTI_PROBE;
+        match_cfg.brief_match_dist_ratio = BRIEF_MATCH_DIST_RATIO;
+    } else {
+        match_cfg.type = MatcherType::LK_FLOW;
+        match_cfg.lk_win_size = 21;
+        match_cfg.lk_max_level = 3;
+        match_cfg.flow_back = (FLOW_BACK != 0);
+        match_cfg.back_dist_thresh = 0.5;
+    }
+    matcher_ = createMatcher(match_cfg);
+    ROS_INFO("[PolarFP] Matcher: %s", matcher_->name().c_str());
+}
+
+// =============================================
 // 偏振模式辅助函数实现
 // =============================================
 
@@ -210,39 +244,6 @@ void FeatureTracker::setMaskForChannel(ChannelState& ch)
     }
 }
 
-/** @brief 速度计算的通道版本 */
-vector<cv::Point2f> FeatureTracker::ptsVelocityForChannel(ChannelState& ch)
-{
-    vector<cv::Point2f> pts_velocity;
-    ch.cur_un_pts_map.clear();
-    for (unsigned int i = 0; i < ch.ids.size(); i++)
-        ch.cur_un_pts_map.insert(make_pair(ch.ids[i], ch.cur_un_pts[i]));
-
-    if (!ch.prev_un_pts_map.empty())
-    {
-        double dt = ch.cur_time - ch.prev_time;
-        for (unsigned int i = 0; i < ch.ids.size(); i++)
-        {
-            std::map<int, cv::Point2f>::iterator it;
-            it = ch.prev_un_pts_map.find(ch.ids[i]);
-            if (it != ch.prev_un_pts_map.end())
-            {
-                double v_x = (ch.cur_un_pts[i].x - it->second.x) / dt;
-                double v_y = (ch.cur_un_pts[i].y - it->second.y) / dt;
-                pts_velocity.push_back(cv::Point2f(v_x, v_y));
-            }
-            else
-                pts_velocity.push_back(cv::Point2f(0, 0));
-        }
-    }
-    else
-    {
-        for (unsigned int i = 0; i < ch.cur_pts.size(); i++)
-            pts_velocity.push_back(cv::Point2f(0, 0));
-    }
-    return pts_velocity;
-}
-
 /** @brief 多通道可视化 */
 void FeatureTracker::drawTrackPolar()
 {
@@ -314,14 +315,30 @@ void FeatureTracker::drawTrackPolar()
 }
 
 /**
- * @brief 偏振模式核心跟踪管线
+ * @brief 核心跟踪函数：对输入图像进行特征点跟踪
  *
- * 每通道独立运行 VINS 管线(GFTT + LK光流 + 双向检查 + setMask),
- * 合并结果输出给后端。
+ * 偏振模式下:
+ * 1. raw2polar 分解原始偏振图像为多通道
+ * 2. 每通道独立运行检测器+匹配器管线
+ * 3. 合并所有通道结果输出给后端
+ *
+ * 非偏振模式: 返回空 featureFrame (当前仅支持偏振模式)
  */
 map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>
-FeatureTracker::trackImagePolar(double _cur_time)
+FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat &/*_img1*/)
 {
+    cur_time = _cur_time;
+    cur_img = _img;
+
+    // ---- 偏振模式分支 ----
+    if (!isPolarMode())
+        return {};  // 非偏振模式当前未实现
+
+    if (channels.empty()) {
+        ROS_ERROR("[PolarFP] polar mode enabled but no channels configured");
+        return {};
+    }
+
     // =============================================
     // 1. 偏振图像分解: raw → 多通道
     // =============================================
@@ -338,85 +355,104 @@ FeatureTracker::trackImagePolar(double _cur_time)
     }
 
     // =============================================
-    // 2. 对每个通道,独立运行 VINS 跟踪管线
+    // 2. 每通道独立跟踪 (模块化: detector_ + matcher_)
     // =============================================
     for (auto& ch : channels) {
         if (ch.cur_img.empty()) continue;
 
         ch.cur_time = cur_time;
 
-        // ---- 2a. LK 光流跟踪(prev → cur) ----
+        // ---- 2a. 匹配: prev → cur (LK光流 或 BRIEF+FLANN) ----
         if (!ch.prev_pts.empty() && !ch.prev_img.empty()) {
-            vector<uchar> status;
-            vector<float> err;
+            MatchResult mr = matcher_->track(
+                ch.prev_img, ch.cur_img,
+                ch.prev_pts, ch.ids, ch.track_cnt,
+                ch.prev_brief_desc);
 
-            cv::calcOpticalFlowPyrLK(ch.prev_img, ch.cur_img, ch.prev_pts, ch.cur_pts,
-                                     status, err, cv::Size(21, 21), 3);
+            ch.prev_pts = std::move(mr.prev_pts);
+            ch.cur_pts  = std::move(mr.cur_pts);
+            ch.ids      = std::move(mr.ids);
+            ch.track_cnt = std::move(mr.track_cnt);
+        }
 
-            // ---- 2b. 反向光流检查 ----
-            if (FLOW_BACK) {
-                vector<uchar> reverse_status;
-                vector<cv::Point2f> reverse_pts = ch.prev_pts;
-                cv::calcOpticalFlowPyrLK(ch.cur_img, ch.prev_img, ch.cur_pts, reverse_pts,
-                                         reverse_status, err, cv::Size(21, 21), 1,
-                                         cv::TermCriteria(cv::TermCriteria::COUNT + cv::TermCriteria::EPS, 30, 0.01),
-                                         cv::OPTFLOW_USE_INITIAL_FLOW);
-                for (size_t i = 0; i < status.size(); i++) {
-                    if (status[i] && reverse_status[i] &&
-                        distance(ch.prev_pts[i], reverse_pts[i]) <= 0.5) {
-                        status[i] = 1;
-                    } else {
-                        status[i] = 0;
-                    }
-                }
-            }
-
-            // ---- 2c. 边界检查 ----
-            for (int i = 0; i < int(ch.cur_pts.size()); i++)
-                if (status[i] && !inBorderImpl(ch, ch.cur_pts[i]))
+        // ---- 2b. 边界检查 ----
+        if (!ch.cur_pts.empty()) {
+            vector<uchar> status(ch.cur_pts.size(), 1);
+            for (size_t i = 0; i < ch.cur_pts.size(); i++) {
+                if (!inBorderImpl(ch, ch.cur_pts[i]))
                     status[i] = 0;
-
+            }
             reduceVector(ch.prev_pts, status);
             reduceVector(ch.cur_pts, status);
             reduceVector(ch.ids, status);
             reduceVector(ch.track_cnt, status);
         }
 
-        // ---- 2d. track_cnt++ ----
+        // ---- 2c. track_cnt++ ----
         for (auto &n : ch.track_cnt)
             n++;
 
-        // ---- 2e. setMask:保证空间均匀分布 ----
+        // ---- 2d. setMask: 空间均匀分布 ----
         setMaskForChannel(ch);
 
-        // ---- 2f. 新特征检测(GFTT) ----
+        // ---- 2e. 新特征检测 ----
         int n_max_cnt = MAX_CNT - static_cast<int>(ch.cur_pts.size());
         if (n_max_cnt > 0) {
             if (ch.mask.empty())
                 cout << "mask is empty for channel " << ch.name << endl;
             if (ch.mask.type() != CV_8UC1)
                 cout << "mask type wrong for channel " << ch.name << endl;
-            cv::goodFeaturesToTrack(ch.cur_img, ch.n_pts, n_max_cnt, 0.01, MIN_DIST, ch.mask);
+            ch.n_pts = detector_->detect(ch.cur_img, ch.mask, n_max_cnt);
         } else {
             ch.n_pts.clear();
         }
 
-        // ---- 2g. 新特征加入,分配全局唯一 ID ----
+        // ---- 2f. 新特征加入, 分配全局唯一 ID ----
         for (auto &p : ch.n_pts) {
             ch.cur_pts.push_back(p);
-            ch.ids.push_back(n_id++);   // 全局计数器,保证跨通道 ID 唯一
+            ch.ids.push_back(n_id++);
             ch.track_cnt.push_back(1);
         }
 
-        // ---- 2h. 归一化坐标(相机标定已匹配通道分辨率,直接使用) ----
+        // ---- 2g. 提取描述子 (BRIEF 模式) ----
+        if (matcher_->name() == "BRIEF_FLANN" && !ch.cur_pts.empty()) {
+            ch.prev_brief_desc = matcher_->extractDescriptors(ch.cur_img, ch.cur_pts);
+        } else {
+            ch.prev_brief_desc.clear();
+        }
+
+        // ---- 2h. 归一化坐标 + 速度 ----
         ch.cur_un_pts = undistortedPts(ch.cur_pts, m_camera[0]);
-        ch.pts_velocity = ptsVelocityForChannel(ch);
+
+        // 构建当前帧 undistorted map
+        map<int, cv::Point2f> cur_un_pts_map;
+        for (size_t i = 0; i < ch.ids.size(); i++)
+            cur_un_pts_map[ch.ids[i]] = ch.cur_un_pts[i];
+
+        // 计算速度
+        vector<cv::Point2f> vel;
+        if (!ch.prev_un_pts_map.empty()) {
+            double dt = ch.cur_time - ch.prev_time;
+            for (size_t i = 0; i < ch.ids.size(); i++) {
+                auto it = ch.prev_un_pts_map.find(ch.ids[i]);
+                if (it != ch.prev_un_pts_map.end()) {
+                    double vx = (ch.cur_un_pts[i].x - it->second.x) / dt;
+                    double vy = (ch.cur_un_pts[i].y - it->second.y) / dt;
+                    vel.push_back(cv::Point2f(vx, vy));
+                } else {
+                    vel.push_back(cv::Point2f(0, 0));
+                }
+            }
+        } else {
+            vel.assign(ch.cur_pts.size(), cv::Point2f(0, 0));
+        }
+        ch.pts_velocity = std::move(vel);
 
         // ---- 2i. 更新 prev 状态 ----
         ch.prev_img = ch.cur_img.clone();
         ch.prev_pts = ch.cur_pts;
         ch.prev_un_pts = ch.cur_un_pts;
-        ch.prev_un_pts_map = ch.cur_un_pts_map;
+        ch.prev_un_pts_map = std::move(ch.cur_un_pts_map);
         ch.prev_time = ch.cur_time;
         ch.prevLeftPtsMap.clear();
         for (size_t i = 0; i < ch.cur_pts.size(); i++)
@@ -452,254 +488,13 @@ FeatureTracker::trackImagePolar(double _cur_time)
         drawTrackPolar();
 
     // =============================================
-    // 5. 更新全局状态(用于后端交互)
+    // 5. 更新全局状态
     // =============================================
     hasPrediction = false;
 
-    // 将第一个通道的图像作为全局 cur_img 用于可视化
     if (!channels.empty() && !channels[0].cur_img.empty())
         cur_img = channels[0].cur_img;
 
-    return featureFrame;
-}
-
-/**
- * @brief 核心跟踪函数：对输入图像进行特征点跟踪
- * @param _cur_time 当前图像时间戳
- * @param _img 当前帧左目图像（灰度图）
- * @param _img1 当前帧右目图像（双目模式，默认空表示单目）
- * @return 包含所有特征点观测数据的 map
- *
- * 主要处理流程：
- * 1. 光流跟踪：使用 Lucas-Kanade 光流将 prev_pts 跟踪到 cur_pts
- *    - 若有预测位置（来自IMU预积分或后端优化），使用 OPTFLOW_USE_INITIAL_FLOW 加速
- *    - 若预测光流成功率低（<10个点），回退到标准光流（迭代3层）
- *    - 可选的反向光流检查（FLOW_BACK）：从当前帧反推到上一帧，距离<0.5才认为匹配成功
- * 2. 边界检查：剔除超出图像边界的特征点
- * 3. 均匀化处理：调用 setMask() 优先保留跟踪时间长的特征点
- * 4. 新特征点检测：在 mask 非零区域使用 Shi-Tomasi 角点检测补充新特征点
- * 5. 去畸变：将像素坐标转换到归一化平面
- * 6. 速度计算：根据前后两帧的归一化坐标差和时间差计算速度
- * 7. 双目跟踪（如启用）：从左目跟踪到右目，同样做反向检查
- * 8. 打包输出：将所有特征点数据组织为 map 结构返回
- */
-map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat &_img1)
-{
-    cur_time = _cur_time;
-    cur_img = _img;
-
-    // 偏振模式分支
-    if (isPolarMode())
-        return trackImagePolar(_cur_time);
-
-    // ====== 以下为原版 VINS 管线,完全不变 ======
-    TicToc t_r;
-    row = cur_img.rows;
-    col = cur_img.cols;
-    cv::Mat rightImg = _img1;
-    /*
-    {
-        cv::Ptr<cv::CLAHE> clahe = cv::createCLAHE(3.0, cv::Size(8, 8));
-        clahe->apply(cur_img, cur_img);
-        if(!rightImg.empty())
-            clahe->apply(rightImg, rightImg);
-    }
-    */
-    cur_pts.clear();
-
-    if (prev_pts.size() > 0)
-    {
-        TicToc t_o;
-        vector<uchar> status;
-        vector<float> err;
-        if(hasPrediction)
-        {
-            cur_pts = predict_pts;
-            cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts, status, err, cv::Size(21, 21), 1,
-            cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 30, 0.01), cv::OPTFLOW_USE_INITIAL_FLOW);
-
-            int succ_num = 0;
-            for (size_t i = 0; i < status.size(); i++)
-            {
-                if (status[i])
-                    succ_num++;
-            }
-            if (succ_num < 10)
-               cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts, status, err, cv::Size(21, 21), 3);
-        }
-        else
-            cv::calcOpticalFlowPyrLK(prev_img, cur_img, prev_pts, cur_pts, status, err, cv::Size(21, 21), 3);
-        // reverse check
-        if(FLOW_BACK)
-        {
-            vector<uchar> reverse_status;
-            vector<cv::Point2f> reverse_pts = prev_pts;
-            cv::calcOpticalFlowPyrLK(cur_img, prev_img, cur_pts, reverse_pts, reverse_status, err, cv::Size(21, 21), 1,
-            cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 30, 0.01), cv::OPTFLOW_USE_INITIAL_FLOW);
-            //cv::calcOpticalFlowPyrLK(cur_img, prev_img, cur_pts, reverse_pts, reverse_status, err, cv::Size(21, 21), 3);
-            for(size_t i = 0; i < status.size(); i++)
-            {
-                if(status[i] && reverse_status[i] && distance(prev_pts[i], reverse_pts[i]) <= 0.5)
-                {
-                    status[i] = 1;
-                }
-                else
-                    status[i] = 0;
-            }
-        }
-
-        for (int i = 0; i < int(cur_pts.size()); i++)
-            if (status[i] && !inBorder(cur_pts[i]))
-                status[i] = 0;
-        reduceVector(prev_pts, status);
-        reduceVector(cur_pts, status);
-        reduceVector(ids, status);
-        reduceVector(track_cnt, status);
-        ROS_DEBUG("temporal optical flow costs: %fms", t_o.toc());
-        //printf("track cnt %d\n", (int)ids.size());
-    }
-
-    for (auto &n : track_cnt)
-        n++;
-
-    if (1)
-    {
-        //rejectWithF();
-        ROS_DEBUG("set mask begins");
-        TicToc t_m;
-        setMask();
-        ROS_DEBUG("set mask costs %fms", t_m.toc());
-
-        ROS_DEBUG("detect feature begins");
-        TicToc t_t;
-        int n_max_cnt = MAX_CNT - static_cast<int>(cur_pts.size());
-        if (n_max_cnt > 0)
-        {
-            if(mask.empty())
-                cout << "mask is empty " << endl;
-            if (mask.type() != CV_8UC1)
-                cout << "mask type wrong " << endl;
-            cv::goodFeaturesToTrack(cur_img, n_pts, MAX_CNT - cur_pts.size(), 0.01, MIN_DIST, mask);
-        }
-        else
-            n_pts.clear();
-        ROS_DEBUG("detect feature costs: %f ms", t_t.toc());
-
-        for (auto &p : n_pts)
-        {
-            cur_pts.push_back(p);
-            ids.push_back(n_id++);
-            track_cnt.push_back(1);
-        }
-        //printf("feature cnt after add %d\n", (int)ids.size());
-    }
-
-    cur_un_pts = undistortedPts(cur_pts, m_camera[0]);
-    pts_velocity = ptsVelocity(ids, cur_un_pts, cur_un_pts_map, prev_un_pts_map);
-
-    if(!_img1.empty() && stereo_cam)
-    {
-        ids_right.clear();
-        cur_right_pts.clear();
-        cur_un_right_pts.clear();
-        right_pts_velocity.clear();
-        cur_un_right_pts_map.clear();
-        if(!cur_pts.empty())
-        {
-            //printf("stereo image; track feature on right image\n");
-            vector<cv::Point2f> reverseLeftPts;
-            vector<uchar> status, statusRightLeft;
-            vector<float> err;
-            // cur left ---- cur right
-            cv::calcOpticalFlowPyrLK(cur_img, rightImg, cur_pts, cur_right_pts, status, err, cv::Size(21, 21), 3);
-            // reverse check cur right ---- cur left
-            if(FLOW_BACK)
-            {
-                cv::calcOpticalFlowPyrLK(rightImg, cur_img, cur_right_pts, reverseLeftPts, statusRightLeft, err, cv::Size(21, 21), 3);
-                for(size_t i = 0; i < status.size(); i++)
-                {
-                    if(status[i] && statusRightLeft[i] && inBorder(cur_right_pts[i]) && distance(cur_pts[i], reverseLeftPts[i]) <= 0.5)
-                        status[i] = 1;
-                    else
-                        status[i] = 0;
-                }
-            }
-
-            ids_right = ids;
-            reduceVector(cur_right_pts, status);
-            reduceVector(ids_right, status);
-            // only keep left-right pts
-            /*
-            reduceVector(cur_pts, status);
-            reduceVector(ids, status);
-            reduceVector(track_cnt, status);
-            reduceVector(cur_un_pts, status);
-            reduceVector(pts_velocity, status);
-            */
-            cur_un_right_pts = undistortedPts(cur_right_pts, m_camera[1]);
-            right_pts_velocity = ptsVelocity(ids_right, cur_un_right_pts, cur_un_right_pts_map, prev_un_right_pts_map);
-        }
-        prev_un_right_pts_map = cur_un_right_pts_map;
-    }
-    if(SHOW_TRACK)
-        drawTrack(cur_img, rightImg, ids, cur_pts, cur_right_pts, prevLeftPtsMap);
-
-    prev_img = cur_img;
-    prev_pts = cur_pts;
-    prev_un_pts = cur_un_pts;
-    prev_un_pts_map = cur_un_pts_map;
-    prev_time = cur_time;
-    hasPrediction = false;
-
-    prevLeftPtsMap.clear();
-    for(size_t i = 0; i < cur_pts.size(); i++)
-        prevLeftPtsMap[ids[i]] = cur_pts[i];
-
-    map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> featureFrame;
-    for (size_t i = 0; i < ids.size(); i++)
-    {
-        int feature_id = ids[i];
-        double x, y ,z;
-        x = cur_un_pts[i].x;
-        y = cur_un_pts[i].y;
-        z = 1;
-        double p_u, p_v;
-        p_u = cur_pts[i].x;
-        p_v = cur_pts[i].y;
-        int camera_id = 0;
-        double velocity_x, velocity_y;
-        velocity_x = pts_velocity[i].x;
-        velocity_y = pts_velocity[i].y;
-
-        Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
-        xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-        featureFrame[feature_id].emplace_back(camera_id,  xyz_uv_velocity);
-    }
-
-    if (!_img1.empty() && stereo_cam)
-    {
-        for (size_t i = 0; i < ids_right.size(); i++)
-        {
-            int feature_id = ids_right[i];
-            double x, y ,z;
-            x = cur_un_right_pts[i].x;
-            y = cur_un_right_pts[i].y;
-            z = 1;
-            double p_u, p_v;
-            p_u = cur_right_pts[i].x;
-            p_v = cur_right_pts[i].y;
-            int camera_id = 1;
-            double velocity_x, velocity_y;
-            velocity_x = right_pts_velocity[i].x;
-            velocity_y = right_pts_velocity[i].y;
-
-            Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
-            xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-            featureFrame[feature_id].emplace_back(camera_id,  xyz_uv_velocity);
-        }
-    }
-
-    //printf("feature track whole time %f\n", t_r.toc());
     return featureFrame;
 }
 
