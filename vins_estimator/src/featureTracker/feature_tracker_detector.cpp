@@ -8,6 +8,7 @@
  *******************************************************/
 
 #include "feature_tracker_detector.h"
+#include "superpoint_detector.h"
 
 std::vector<cv::Point2f> GFTTDetector::detect(
     const cv::Mat& image, const cv::Mat& mask, int max_cnt) const
@@ -70,6 +71,10 @@ std::shared_ptr<FeatureDetector> createDetector(const DetectorConfig& cfg)
             return std::make_shared<GFTTDetector>(cfg.gftt_quality, cfg.min_dist);
         case DetectorType::FAST:
             return std::make_shared<FASTDetector>(cfg.fast_threshold, cfg.fast_nonmax);
+        case DetectorType::SUPERPOINT:
+            return std::make_shared<SuperPointFeatureDetector>(
+                cfg.sp_model_path, cfg.sp_use_gpu,
+                cfg.sp_keypoint_threshold, cfg.sp_nms_radius);
         default:
             return std::make_shared<GFTTDetector>(cfg.gftt_quality, cfg.min_dist);
     }

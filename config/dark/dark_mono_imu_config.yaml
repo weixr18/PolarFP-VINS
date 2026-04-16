@@ -1,14 +1,27 @@
 %YAML:1.0
 
-# common parameters
+###################################################
+# 0. common parameters
+###################################################
+
 imu: 1         
 num_of_cam: 1  
 use_polar: 1
 polar_channels: "s0,dop,aopsin,aopcos" # "s0,dop,aopsin,aopcos"
 
-# 偏振通道滤波配置
+# topic and paths
+imu_topic: "/ahrs_driver_node/imu_data"
+image0_topic: "/arena_cam_qc2/image_raw"
+image1_topic: "/arena_cam_qc1/image_raw"
+output_path: "/home/dhz/SLAM/output/VINS-Fusion"
+output_name: "dark_2026-03-23-11-39-48_MI_all"
+
+###################################################
+# 1.1 Frontend - filter params
+###################################################
+
 # filter_type: 0=无滤波, 1=双边滤波, 2=导向滤波
-polar_filter_type: 1
+polar_filter_type: 2
 
 # 双边滤波参数 (filter_type=1 时使用)
 polar_bilateral_d: 9
@@ -16,15 +29,31 @@ polar_bilateral_sigma_color: 200
 polar_bilateral_sigma_space: 30
 
 # 导向滤波参数 (filter_type=2 时使用)
-# guided_radius: 窗口半径（核大小 = 2*radius+1），越大越平滑
-# guided_eps: 正则化参数，越大平滑越强，越小越保留细节
-polar_guided_radius: 4
-polar_guided_eps: 0.01
+polar_guided_radius: 4 # guided_radius: 窗口半径（核大小 = 2*radius+1），越大越平滑
+polar_guided_eps: 0.01 # guided_eps: 正则化参数，越大平滑越强，越小越保留细节
+
+###################################################
+# 1.2 Frontend - detector params
+###################################################
 
 # 特征检测器/匹配器配置
-feature_detector_type: 0      # 0=GFTT, 1=FAST
+feature_detector_type: 2      # 0=GFTT, 1=FAST, 2=SUPERPOINT
 fast_threshold: 20
 fast_nonmax_suppression: 1
+
+# SuperPoint 参数 (feature_detector_type=2 时使用)
+superpoint_model_path: "/home/dhz/ws/vi_catkin_ws/src/PolarFP-VINS/vins_estimator/nn/superpoint_v1.pt"
+superpoint_use_gpu: 1
+superpoint_keypoint_threshold: 0.015
+superpoint_nms_radius: 4
+
+max_cnt: 150            # max feature number in feature tracking
+min_dist: 20            # min distance between two features 
+F_threshold: 1.0        # ransac threshold (pixel)
+
+###################################################
+# 1.3 Frontend - matcher params
+###################################################
 
 feature_matcher_type: 0       # 0=LK_FLOW, 1=BRIEF_FLANN
 brief_descriptor_bytes: 32
@@ -33,23 +62,16 @@ flann_lsh_key_size: 20
 flann_multi_probe: 20
 brief_match_dist_ratio: 0.75
 
-max_cnt: 150            # max feature number in feature tracking
-min_dist: 20            # min distance between two features 
-F_threshold: 1.0        # ransac threshold (pixel)
 
-# topic and paths
-imu_topic: "/ahrs_driver_node/imu_data"
-image0_topic: "/arena_cam_qc2/image_raw"
-image1_topic: "/arena_cam_qc1/image_raw"
-output_path: "/home/dhz/SLAM/output/VINS-Fusion"
-output_name: "dark_2026-03-29-21-05-45_MI_all"
+###################################################
+# 1.4 Frontend - sensor params
+###################################################
 
 # camera calibration
 cam0_calib: "TRI050S-spin4.yaml"
 cam1_calib: "TRI050S-spin4.yaml"
 image_width: 612
 image_height: 512
-   
 
 # Extrinsic parameter between IMU and Camera.
 estimate_extrinsic: 0   # 0  Have an accurate extrinsic parameters. We will trust the following imu^R_cam, imu^T_cam, don't change it.
@@ -65,6 +87,12 @@ body_T_cam0: !!opencv-matrix # T_ic
           0.00428984, -0.99986162, -0.01607291,  0.00748347,
           0.,          0.,          0.,          1.        ]
 
+
+
+###################################################
+# 1.5 Frontend - other params
+###################################################
+
 #Multiple thread support
 multiple_thread: 1
 
@@ -72,6 +100,11 @@ multiple_thread: 1
 freq: 10                # frequence (Hz) of publish tracking result. At least 10Hz for good estimation. If set 0, the frequence will be same as raw image 
 show_track: 1           # publish tracking image as topic
 flow_back: 1            # perform forward and backward optical flow to improve feature tracking accuracy
+
+
+###################################################
+# 2. Backend params
+###################################################
 
 #optimization parameters
 max_solver_time: 0.04  # max solver itration time (ms), to guarantee real time

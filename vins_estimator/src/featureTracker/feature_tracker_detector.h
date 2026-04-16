@@ -15,7 +15,7 @@
 #include <string>
 
 /** @brief 特征检测器类型 */
-enum class DetectorType { GFTT, FAST };
+enum class DetectorType { GFTT, FAST, SUPERPOINT };
 
 /** @brief 检测器配置 */
 struct DetectorConfig {
@@ -26,6 +26,11 @@ struct DetectorConfig {
     // FAST params
     int fast_threshold = 20;
     bool fast_nonmax = true;
+    // SuperPoint params
+    std::string sp_model_path;
+    bool sp_use_gpu = true;
+    float sp_keypoint_threshold = 0.015f;
+    int sp_nms_radius = 4;
 };
 
 /**

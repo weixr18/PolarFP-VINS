@@ -72,7 +72,7 @@ extern std::vector<std::string> POLAR_CHANNELS;
 extern PolarFilterConfig POLAR_FILTER_CFG;
 
 // Feature detector/matcher configuration
-extern int FEATURE_DETECTOR_TYPE;     // 0=GFTT, 1=FAST
+extern int FEATURE_DETECTOR_TYPE;     // 0=GFTT, 1=FAST, 2=SUPERPOINT
 extern int FAST_THRESHOLD;
 extern int FAST_NONMAX_SUPPRESSION;
 extern int FEATURE_MATCHER_TYPE;      // 0=LK_FLOW, 1=BRIEF_FLANN
@@ -81,6 +81,12 @@ extern int FLANN_LSH_TABLES;
 extern int FLANN_LSH_KEY_SIZE;
 extern int FLANN_MULTI_PROBE;
 extern float BRIEF_MATCH_DIST_RATIO;
+
+// SuperPoint parameters
+extern std::string SUPERPOINT_MODEL_PATH;
+extern int SUPERPOINT_USE_GPU;
+extern float SUPERPOINT_KEYPOINT_THRESHOLD;
+extern int SUPERPOINT_NMS_RADIUS;
 
 void readParameters(std::string config_file);
 

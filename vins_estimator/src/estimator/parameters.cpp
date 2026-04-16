@@ -63,6 +63,12 @@ int FLANN_LSH_KEY_SIZE = 20;
 int FLANN_MULTI_PROBE = 20;
 float BRIEF_MATCH_DIST_RATIO = 0.75f;
 
+// SuperPoint parameters
+std::string SUPERPOINT_MODEL_PATH;
+int SUPERPOINT_USE_GPU = 1;
+float SUPERPOINT_KEYPOINT_THRESHOLD = 0.015f;
+int SUPERPOINT_NMS_RADIUS = 4;
+
 
 template <typename T>
 T readParam(ros::NodeHandle &n, std::string name)
@@ -295,11 +301,29 @@ void readParameters(std::string config_file)
         if (!fsSettings["brief_match_dist_ratio"].empty())
             BRIEF_MATCH_DIST_RATIO = (float)(double)fsSettings["brief_match_dist_ratio"];
 
-        const char* det_names[] = {"GFTT", "FAST"};
+        const char* det_names[] = {"GFTT", "FAST", "SUPERPOINT"};
         const char* match_names[] = {"LK_FLOW", "BRIEF_FLANN"};
         ROS_INFO("[PolarFP] Detector: %s, Matcher: %s",
-                 FEATURE_DETECTOR_TYPE < 2 ? det_names[FEATURE_DETECTOR_TYPE] : "unknown",
+                 FEATURE_DETECTOR_TYPE < 3 ? det_names[FEATURE_DETECTOR_TYPE] : "unknown",
                  FEATURE_MATCHER_TYPE < 2 ? match_names[FEATURE_MATCHER_TYPE] : "unknown");
+
+        // SuperPoint parameters
+        if (FEATURE_DETECTOR_TYPE == 2) {
+            if (!fsSettings["superpoint_model_path"].empty()) {
+                fsSettings["superpoint_model_path"] >> SUPERPOINT_MODEL_PATH;
+                // Resolve relative path
+                if (SUPERPOINT_MODEL_PATH[0] != '/') {
+                    SUPERPOINT_MODEL_PATH = configPath + "/" + SUPERPOINT_MODEL_PATH;
+                }
+            }
+            if (!fsSettings["superpoint_use_gpu"].empty())
+                SUPERPOINT_USE_GPU = (int)fsSettings["superpoint_use_gpu"];
+            if (!fsSettings["superpoint_keypoint_threshold"].empty())
+                SUPERPOINT_KEYPOINT_THRESHOLD = (float)(double)fsSettings["superpoint_keypoint_threshold"];
+            if (!fsSettings["superpoint_nms_radius"].empty())
+                SUPERPOINT_NMS_RADIUS = (int)fsSettings["superpoint_nms_radius"];
+            ROS_INFO("[PolarFP] SuperPoint model: %s, GPU: %d", SUPERPOINT_MODEL_PATH.c_str(), SUPERPOINT_USE_GPU);
+        }
     }
 
     fsSettings.release();

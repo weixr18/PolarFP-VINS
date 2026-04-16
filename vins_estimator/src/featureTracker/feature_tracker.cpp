@@ -12,6 +12,7 @@
 #include "feature_tracker.h"
 #include "feature_tracker_detector.h"
 #include "feature_tracker_matcher.h"
+#include "superpoint_detector.h"
 
 /**
  * @brief 判断特征点是否在图像边界内
@@ -138,6 +139,12 @@ void FeatureTracker::initDetectorAndMatcher()
         det_cfg.type = DetectorType::FAST;
         det_cfg.fast_threshold = FAST_THRESHOLD;
         det_cfg.fast_nonmax = FAST_NONMAX_SUPPRESSION;
+    } else if (FEATURE_DETECTOR_TYPE == 2) {
+        det_cfg.type = DetectorType::SUPERPOINT;
+        det_cfg.sp_model_path = SUPERPOINT_MODEL_PATH;
+        det_cfg.sp_use_gpu = (SUPERPOINT_USE_GPU != 0);
+        det_cfg.sp_keypoint_threshold = SUPERPOINT_KEYPOINT_THRESHOLD;
+        det_cfg.sp_nms_radius = SUPERPOINT_NMS_RADIUS;
     } else {
         det_cfg.type = DetectorType::GFTT;
         det_cfg.gftt_quality = 0.01;
@@ -394,14 +401,34 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
 
         // ---- 2d. setMask: 空间均匀分布 ----
         setMaskForChannel(ch);
+    }
 
-        // ---- 2e. 新特征检测 ----
+    // =============================================
+    // 2e. 新特征检测（分 SuperPoint 和 GFTT/FAST 两条路径）
+    // =============================================
+    if (detector_->name() == "SuperPoint") {
+        // 收集所有通道的图像 + mask + max_cnt
+        std::vector<cv::Mat> batch_imgs, batch_masks;
+        std::vector<int> batch_max_cnts;
+        for (const auto& ch : channels) {
+            if (ch.cur_img.empty()) continue;
+            batch_imgs.push_back(ch.cur_img);
+            batch_masks.push_back(ch.mask);
+            batch_max_cnts.push_back(MAX_CNT - static_cast<int>(ch.cur_pts.size()));
+        }
+        // Batch 推理一次，结果存到 detector 内部
+        auto* sp_det = dynamic_cast<SuperPointFeatureDetector*>(detector_.get());
+        if (sp_det) {
+            sp_det->detectBatchForChannels(batch_imgs, batch_masks, batch_max_cnts);
+        }
+    }
+
+    // 逐通道提取（统一入口：SuperPoint 从 batch 缓存取，GFTT/FAST 直接 detect）
+    for (auto& ch : channels) {
+        if (ch.cur_img.empty()) continue;
+
         int n_max_cnt = MAX_CNT - static_cast<int>(ch.cur_pts.size());
-        if (n_max_cnt > 0) {
-            if (ch.mask.empty())
-                cout << "mask is empty for channel " << ch.name << endl;
-            if (ch.mask.type() != CV_8UC1)
-                cout << "mask type wrong for channel " << ch.name << endl;
+        if (n_max_cnt > 0 && !ch.mask.empty()) {
             ch.n_pts = detector_->detect(ch.cur_img, ch.mask, n_max_cnt);
         } else {
             ch.n_pts.clear();
