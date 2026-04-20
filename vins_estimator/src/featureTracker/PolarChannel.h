@@ -80,6 +80,7 @@ enum PolarFilterType {
     FILTER_BILATERAL = 1,
     FILTER_GUIDED = 2,
     FILTER_NLM = 3,
+    FILTER_MEDIAN = 4,
 };
 
 /**
@@ -105,6 +106,9 @@ struct PolarFilterConfig {
     float nlm_h = 50.0f;                ///< 滤波强度
     int nlm_template = 5;               ///< 模板窗口大小
     int nlm_search = 21;                ///< 搜索窗口大小
+
+    // 中值滤波参数
+    int median_kernel_size = 5;         ///< 中值滤波核大小（必须为奇数且 > 1）
 };
 
 /**

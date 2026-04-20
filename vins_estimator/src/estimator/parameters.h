@@ -45,6 +45,7 @@ extern int NUM_ITERATIONS;
 extern std::string EX_CALIB_RESULT_PATH;
 extern std::string VINS_RESULT_PATH;
 extern std::string OUTPUT_FOLDER;
+extern std::string OUTPUT_NAME;
 extern std::string IMU_TOPIC;
 extern double TD;
 extern int ESTIMATE_TD;

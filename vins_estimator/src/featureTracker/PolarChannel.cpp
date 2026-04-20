@@ -299,6 +299,14 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
         dop_img = dop_nlm;
         sin_img = sin_nlm;
         cos_img = cos_nlm;
+    } else if (cfg.filter_type == FILTER_MEDIAN) {
+        cv::Mat dop_median, sin_median, cos_median;
+        cv::medianBlur(dop_img, dop_median, cfg.median_kernel_size);
+        cv::medianBlur(sin_img, sin_median, cfg.median_kernel_size);
+        cv::medianBlur(cos_img, cos_median, cfg.median_kernel_size);
+        dop_img = dop_median;
+        sin_img = sin_median;
+        cos_img = cos_median;
     }
 
     // 组装结果

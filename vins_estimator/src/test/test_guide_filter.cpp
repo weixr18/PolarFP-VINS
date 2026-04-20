@@ -218,8 +218,8 @@ int main(int argc, char** argv) {
     ROS_INFO("Subscribing to %s", IMAGE_TOPIC.c_str());
 
     // 导向滤波参数
-    int guided_r = 4;
-    double guided_eps = 0.01;
+    int guided_r = 8;
+    double guided_eps = 0.0001;
 
     // 双边滤波参数
     double bilateral_sigmaColor = 75;

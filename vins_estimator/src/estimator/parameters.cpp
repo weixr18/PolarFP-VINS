@@ -30,6 +30,7 @@ int ROLLING_SHUTTER;
 std::string EX_CALIB_RESULT_PATH;
 std::string VINS_RESULT_PATH;
 std::string OUTPUT_FOLDER;
+std::string OUTPUT_NAME;
 std::string IMU_TOPIC;
 int ROW, COL;
 double TD;
@@ -131,10 +132,12 @@ void readParameters(std::string config_file)
     MIN_PARALLAX = MIN_PARALLAX / FOCAL_LENGTH;
 
     fsSettings["output_path"] >> OUTPUT_FOLDER;
-    VINS_RESULT_PATH = OUTPUT_FOLDER + "/vio.csv";
+    fsSettings["output_name"] >> OUTPUT_NAME;
+    VINS_RESULT_PATH = OUTPUT_FOLDER + "/" + OUTPUT_NAME + ".csv";
     std::cout << "result path " << VINS_RESULT_PATH << std::endl;
-    std::ofstream fout(VINS_RESULT_PATH, std::ios::out);
-    fout.close();
+    std::ofstream foutC(VINS_RESULT_PATH, std::ios::out);
+    foutC << "time,tx,ty,tz,qw,qx,qy,qz" << std::endl;
+    foutC.close();
 
     ESTIMATE_EXTRINSIC = fsSettings["estimate_extrinsic"];
     if (ESTIMATE_EXTRINSIC == 2)
@@ -279,6 +282,14 @@ void readParameters(std::string config_file)
             ROS_INFO("[PolarFP] NLM filter: h=%.1f template=%d search=%d",
                      POLAR_FILTER_CFG.nlm_h, POLAR_FILTER_CFG.nlm_template,
                      POLAR_FILTER_CFG.nlm_search);
+        }
+
+        // 中值滤波参数
+        if (POLAR_FILTER_CFG.filter_type == FILTER_MEDIAN) {
+            if (!fsSettings["polar_median_kernel_size"].empty())
+                POLAR_FILTER_CFG.median_kernel_size = (int)fsSettings["polar_median_kernel_size"];
+            ROS_INFO("[PolarFP] Median filter: kernel_size=%d",
+                     POLAR_FILTER_CFG.median_kernel_size);
         }
 
         // Feature detector/matcher parameters

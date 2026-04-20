@@ -7,20 +7,20 @@
 imu: 1         
 num_of_cam: 1  
 use_polar: 1
-polar_channels: "s0,dop,aopsin,aopcos" # "s0,dop,aopsin,aopcos"
+polar_channels: "s0" # "s0,dop,aopsin,aopcos"
 
 # topic and paths
 imu_topic: "/ahrs_driver_node/imu_data"
 image0_topic: "/arena_cam_qc2/image_raw"
 image1_topic: "/arena_cam_qc1/image_raw"
-output_path: "/home/dhz/SLAM/output/VINS-Fusion"
-output_name: "dark_2026-03-23-11-39-48_MI_all"
+output_path: "/home/dhz/SLAM/output/PolarFP-VINS"
+output_name: "dark_2026-04-16-13-59-22_MI_all"
 
 ###################################################
 # 1.1 Frontend - filter params
 ###################################################
 
-# filter_type: 0=无滤波, 1=双边滤波, 2=导向滤波
+# filter_type: 0=无滤波, 1=双边滤波, 2=导向滤波, 4=median滤波
 polar_filter_type: 2
 
 # 双边滤波参数 (filter_type=1 时使用)
@@ -29,15 +29,18 @@ polar_bilateral_sigma_color: 200
 polar_bilateral_sigma_space: 30
 
 # 导向滤波参数 (filter_type=2 时使用)
-polar_guided_radius: 4 # guided_radius: 窗口半径（核大小 = 2*radius+1），越大越平滑
-polar_guided_eps: 0.01 # guided_eps: 正则化参数，越大平滑越强，越小越保留细节
+polar_guided_radius: 8 # guided_radius: 窗口半径（核大小 = 2*radius+1），越大越平滑
+polar_guided_eps: 0.0001 # guided_eps: 正则化参数，越大平滑越强，越小越保留细节
+
+# median滤波参数 (filter_type=4 时使用)
+polar_median_kernel_size: 9
 
 ###################################################
 # 1.2 Frontend - detector params
 ###################################################
 
 # 特征检测器/匹配器配置
-feature_detector_type: 2      # 0=GFTT, 1=FAST, 2=SUPERPOINT
+feature_detector_type: 0      # 0=GFTT, 1=FAST, 2=SUPERPOINT
 fast_threshold: 20
 fast_nonmax_suppression: 1
 

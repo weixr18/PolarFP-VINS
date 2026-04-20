@@ -197,6 +197,9 @@ void FeatureTracker::setPolarFilterConfig(const PolarFilterConfig& cfg)
     } else if (cfg.filter_type == FILTER_GUIDED) {
         ROS_INFO("[PolarFP] Guided filter: radius=%d eps=%.4f",
                  cfg.guided_radius, cfg.guided_eps);
+    } else if (cfg.filter_type == FILTER_MEDIAN) {
+        ROS_INFO("[PolarFP] Median filter: kernel_size=%d",
+                 cfg.median_kernel_size);
     }
 }
 
