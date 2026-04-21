@@ -52,6 +52,7 @@ int FLOW_BACK;
 int USE_POLAR = 0;
 std::vector<std::string> POLAR_CHANNELS;
 PolarFilterConfig POLAR_FILTER_CFG;
+int POLAR_HASH_GRID_SIZE = 5;
 
 // Feature detector/matcher configuration
 int FEATURE_DETECTOR_TYPE = 0;   // 0=GFTT, 1=FAST
@@ -225,6 +226,11 @@ void readParameters(std::string config_file)
     // Polar mode parameters
     if (!fsSettings["use_polar"].empty())
         USE_POLAR = (int)fsSettings["use_polar"];
+
+    if (!fsSettings["polar_hash_grid_size"].empty())
+        POLAR_HASH_GRID_SIZE = (int)fsSettings["polar_hash_grid_size"];
+    else
+        POLAR_HASH_GRID_SIZE = 5;
 
     if (USE_POLAR) {
         std::string channels_str;

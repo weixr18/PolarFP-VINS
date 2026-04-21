@@ -66,12 +66,12 @@ struct ChannelState {
     vector<cv::Point2f> prev_pts, cur_pts;      ///< 前后帧特征点坐标
     vector<cv::Point2f> prev_un_pts, cur_un_pts; ///< undistorted 特征点坐标
     vector<cv::Point2f> n_pts;                  ///< 新检测特征点
-    vector<int> ids;                            ///< 特征 ID(全局共享 n_id 分配)
+    vector<int> local_ids;                      ///< 【局部 ID】仅在当前通道内唯一，由 next_local_id 分配
     vector<int> track_cnt;                      ///< 跟踪帧数
     vector<cv::Point2f> pts_velocity;           ///< 像素速度
-    map<int, cv::Point2f> cur_un_pts_map;       ///< ID → 归一化坐标
-    map<int, cv::Point2f> prev_un_pts_map;      ///< 上一帧 ID → 归一化坐标
-    map<int, cv::Point2f> prevLeftPtsMap;       ///< 上一帧 ID → 像素坐标
+    map<int, cv::Point2f> cur_un_pts_map;       ///< local_id → 归一化坐标
+    map<int, cv::Point2f> prev_un_pts_map;      ///< 上一帧 local_id → 归一化坐标
+    map<int, cv::Point2f> prevLeftPtsMap;       ///< 上一帧 local_id → 像素坐标
     double cur_time = 0;                        ///< 当前帧时间戳
     double prev_time = 0;                       ///< 上一帧时间戳
     cv::Mat mask;                               ///< 空间分布掩码
@@ -81,8 +81,49 @@ struct ChannelState {
     std::vector<uchar> prev_brief_desc;
     int brief_bytes = 32;
 
+    int next_local_id = 0;                      ///< 本通道局部 ID 计数器，新特征从此取值
+
     ChannelState() = default;
     explicit ChannelState(const string& n) : name(n) {}
+};
+
+/**
+ * @brief 全局特征池：将多通道局部特征通过空间位置去重，映射为统一全局 ID
+ *
+ * 核心设计：
+ * - 局部 ID（Local ID）：每个偏振通道独立计数，仅在通道内唯一。
+ * - 全局 ID（Global ID）：由本池统一分配，后端只看到全局 ID。
+ * - 同一帧中，一个全局 ID 最多向后端发送一个观测（按通道优先级选）。
+ */
+struct GlobalFeaturePool {
+    struct GlobalFeature {
+        int global_id;
+        std::map<std::string, int> local_ids;          ///< 通道名 -> local_id
+        std::map<std::string, cv::Point2f> pixel_pts;  ///< 通道名 -> 像素坐标
+    };
+
+    int next_global_id = 0;
+
+    std::map<int, std::map<std::string, int>> prev_bindings;    ///< global_id -> {ch_name -> local_id}
+    std::map<int, std::map<std::string, cv::Point2f>> prev_pts; ///< global_id -> {ch_name -> pixel_pt}
+
+    std::map<int, GlobalFeature> cur_globals;                   ///< 当前帧活跃的全局特征
+    std::map<std::pair<int, int>, std::vector<int>> grid;       ///< 空间哈希 (cell_x, cell_y) -> [global_id]
+
+    int grid_size_ = 5;   ///< 哈希网格边长（像素），由 YAML polar_hash_grid_size 注入
+
+    void beginFrame();
+    void propagateTracked(const std::vector<ChannelState>& channels);
+    void registerUnboundFeatures(std::vector<ChannelState>& channels, int min_dist);
+    std::map<int, std::vector<std::pair<int, Eigen::Matrix<double, 7, 1>>>>
+    buildFeatureFrame(const std::vector<ChannelState>& channels) const;
+    std::map<int, std::vector<std::pair<std::string, int>>> getGlobalToLocalMap() const;
+    void endFrame();
+
+private:
+    std::pair<int, int> getGridCell(const cv::Point2f& pt) const;
+    void insertToGrid(int global_id, const cv::Point2f& pt);
+    std::vector<int> queryNearby(const cv::Point2f& pt) const;
 };
 
 /**
@@ -260,6 +301,9 @@ public:
     vector<ChannelState> channels;        ///< 启用的通道状态列表
     bool polar_mode = false;              ///< 是否处于偏振模式
     PolarFilterConfig polar_filter_cfg;   ///< 偏振通道滤波配置
+    GlobalFeaturePool global_pool_;       ///< 全局特征池（V2.5 新增）
+
+    void setPolarHashGridSize(int size) { global_pool_.grid_size_ = size; }
 
 private:
     /** @brief 从 PolarChannelResult 提取指定通道的 8bit 图像 */

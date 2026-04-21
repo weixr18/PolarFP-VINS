@@ -7,14 +7,15 @@
 imu: 1         
 num_of_cam: 1  
 use_polar: 1
-polar_channels: "s0" # "s0,dop,aopsin,aopcos"
+polar_channels: "s0,dop,aopsin,aopcos" # "s0,dop,aopsin,aopcos"
+polar_hash_grid_size: 5   # 全局特征池空间哈希网格大小(px)，默认5
 
 # topic and paths
 imu_topic: "/ahrs_driver_node/imu_data"
-image0_topic: "/arena_cam_qc2/image_raw"
-image1_topic: "/arena_cam_qc1/image_raw"
+image0_topic: "/arena_cam_qc1/image_raw"
+image1_topic: "/arena_cam_qc2/image_raw"
 output_path: "/home/dhz/SLAM/output/PolarFP-VINS"
-output_name: "dark_2026-04-16-13-59-22_MI_all"
+output_name: "dark_2026-04-16-13-33-43_MI_all"
 
 ###################################################
 # 1.1 Frontend - filter params
@@ -51,7 +52,7 @@ superpoint_keypoint_threshold: 0.015
 superpoint_nms_radius: 4
 
 max_cnt: 150            # max feature number in feature tracking
-min_dist: 20            # min distance between two features 
+min_dist: 20            # min distance between two features
 F_threshold: 1.0        # ransac threshold (pixel)
 
 ###################################################
@@ -81,16 +82,15 @@ estimate_extrinsic: 0   # 0  Have an accurate extrinsic parameters. We will trus
                         # 1  Have an initial guess about extrinsic parameters. We will optimize around your initial guess.
 
 # transfer coordinates from cam to imu0 !!!!!!!
+# currently qc_1(right eye) as cam0
 body_T_cam0: !!opencv-matrix # T_ic
    rows: 4
    cols: 4
    dt: d
-   data: [0.99997566,  0.00437766, -0.00543242, -0.08807137,
-          0.00550203, -0.01604921,  0.99985606,  0.02811719,
-          0.00428984, -0.99986162, -0.01607291,  0.00748347,
+   data: [0.99997499, -0.00497565,  0.00502634,  0.01120031,
+         -0.00505015, -0.00478453,  0.9999758,   0.0232537, 
+         -0.00495149, -0.99997618, -0.00480954,  0.00700643,
           0.,          0.,          0.,          1.        ]
-
-
 
 ###################################################
 # 1.5 Frontend - other params

@@ -173,6 +173,192 @@ void FeatureTracker::initDetectorAndMatcher()
 }
 
 // =============================================
+// GlobalFeaturePool 实现
+// =============================================
+
+void GlobalFeaturePool::beginFrame()
+{
+    cur_globals.clear();
+    grid.clear();
+}
+
+void GlobalFeaturePool::propagateTracked(const std::vector<ChannelState>& channels)
+{
+    for (const auto& [global_id, channel_map] : prev_bindings) {
+        for (const auto& [ch_name, prev_local_id] : channel_map) {
+            const ChannelState* ch_ptr = nullptr;
+            for (const auto& ch : channels) {
+                if (ch.name == ch_name) {
+                    ch_ptr = &ch;
+                    break;
+                }
+            }
+            if (!ch_ptr) continue;
+
+            const auto& ch = *ch_ptr;
+            auto it = std::find(ch.local_ids.begin(), ch.local_ids.end(), prev_local_id);
+            if (it != ch.local_ids.end()) {
+                size_t idx = std::distance(ch.local_ids.begin(), it);
+                cur_globals[global_id].global_id = global_id;
+                cur_globals[global_id].local_ids[ch_name] = prev_local_id;
+                cur_globals[global_id].pixel_pts[ch_name] = ch.cur_pts[idx];
+                insertToGrid(global_id, ch.cur_pts[idx]);
+            }
+        }
+    }
+}
+
+void GlobalFeaturePool::registerUnboundFeatures(std::vector<ChannelState>& channels, int min_dist)
+{
+    for (auto& ch : channels) {
+        for (size_t i = 0; i < ch.local_ids.size(); ++i) {
+            int local_id = ch.local_ids[i];
+            bool already_bound = false;
+            for (const auto& [gid, gf] : cur_globals) {
+                auto it = gf.local_ids.find(ch.name);
+                if (it != gf.local_ids.end() && it->second == local_id) {
+                    already_bound = true;
+                    break;
+                }
+            }
+            if (already_bound) continue;
+
+            cv::Point2f pt = ch.cur_pts[i];
+            auto candidates = queryNearby(pt);
+
+            bool attached = false;
+            for (int gid : candidates) {
+                auto& gf = cur_globals[gid];
+                if (gf.local_ids.count(ch.name)) continue;
+                if (gf.pixel_pts.empty()) continue;
+
+                double min_d = std::numeric_limits<double>::max();
+                for (const auto& [_, other_pt] : gf.pixel_pts) {
+                    double dx = pt.x - other_pt.x;
+                    double dy = pt.y - other_pt.y;
+                    min_d = std::min(min_d, dx*dx + dy*dy);
+                }
+                if (min_d <= (min_dist / 2.0) * (min_dist / 2.0)) {
+                    gf.local_ids[ch.name] = local_id;
+                    gf.pixel_pts[ch.name] = pt;
+                    insertToGrid(gid, pt);
+                    attached = true;
+                    break;
+                }
+            }
+
+            if (!attached) {
+                int new_gid = next_global_id++;
+                GlobalFeature gf;
+                gf.global_id = new_gid;
+                gf.local_ids[ch.name] = local_id;
+                gf.pixel_pts[ch.name] = pt;
+                cur_globals[new_gid] = std::move(gf);
+                insertToGrid(new_gid, pt);
+            }
+        }
+    }
+}
+
+std::map<int, std::vector<std::pair<int, Eigen::Matrix<double, 7, 1>>>>
+GlobalFeaturePool::buildFeatureFrame(const std::vector<ChannelState>& channels) const
+{
+    std::map<int, std::vector<std::pair<int, Eigen::Matrix<double, 7, 1>>>> featureFrame;
+
+    std::map<std::string, const ChannelState*> ch_map;
+    for (const auto& ch : channels) ch_map[ch.name] = &ch;
+
+    for (const auto& [gid, gf] : cur_globals) {
+        const ChannelState* selected_ch = nullptr;
+        int selected_local_id = -1;
+        size_t selected_idx = 0;
+
+        for (const auto& ch : channels) {
+            auto it = gf.local_ids.find(ch.name);
+            if (it != gf.local_ids.end()) {
+                selected_local_id = it->second;
+                auto ch_it = ch_map.find(ch.name);
+                if (ch_it == ch_map.end()) continue;
+                selected_ch = ch_it->second;
+                for (size_t i = 0; i < selected_ch->local_ids.size(); ++i) {
+                    if (selected_ch->local_ids[i] == selected_local_id) {
+                        selected_idx = i;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+
+        if (!selected_ch) continue;
+
+        const auto& ch = *selected_ch;
+        double x = ch.cur_un_pts[selected_idx].x;
+        double y = ch.cur_un_pts[selected_idx].y;
+        double z = 1;
+        double p_u = ch.cur_pts[selected_idx].x;
+        double p_v = ch.cur_pts[selected_idx].y;
+        double velocity_x = ch.pts_velocity[selected_idx].x;
+        double velocity_y = ch.pts_velocity[selected_idx].y;
+
+        Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
+        xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
+        featureFrame[gid].emplace_back(0, xyz_uv_velocity);
+    }
+    return featureFrame;
+}
+
+std::map<int, std::vector<std::pair<std::string, int>>>
+GlobalFeaturePool::getGlobalToLocalMap() const
+{
+    std::map<int, std::vector<std::pair<std::string, int>>> result;
+    for (const auto& [gid, gf] : cur_globals) {
+        for (const auto& [ch_name, local_id] : gf.local_ids) {
+            result[gid].emplace_back(ch_name, local_id);
+        }
+    }
+    return result;
+}
+
+void GlobalFeaturePool::endFrame()
+{
+    prev_bindings.clear();
+    prev_pts.clear();
+    for (const auto& [gid, gf] : cur_globals) {
+        if (!gf.local_ids.empty()) {
+            prev_bindings[gid] = gf.local_ids;
+            prev_pts[gid] = gf.pixel_pts;
+        }
+    }
+}
+
+std::pair<int, int> GlobalFeaturePool::getGridCell(const cv::Point2f& pt) const
+{
+    return {static_cast<int>(pt.x) / grid_size_, static_cast<int>(pt.y) / grid_size_};
+}
+
+void GlobalFeaturePool::insertToGrid(int global_id, const cv::Point2f& pt)
+{
+    auto cell = getGridCell(pt);
+    grid[cell].push_back(global_id);
+}
+
+std::vector<int> GlobalFeaturePool::queryNearby(const cv::Point2f& pt) const
+{
+    std::vector<int> result;
+    auto [cx, cy] = getGridCell(pt);
+    for (int dx = -1; dx <= 1; ++dx) {
+        for (int dy = -1; dy <= 1; ++dy) {
+            auto it = grid.find({cx + dx, cy + dy});
+            if (it != grid.end()) {
+                result.insert(result.end(), it->second.begin(), it->second.end());
+            }
+        }
+    }
+    return result;
+}
+
+// =============================================
 // 偏振模式辅助函数实现
 // =============================================
 
@@ -231,7 +417,7 @@ void FeatureTracker::setMaskForChannel(ChannelState& ch)
 
     vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
     for (unsigned int i = 0; i < ch.cur_pts.size(); i++)
-        cnt_pts_id.push_back(make_pair(ch.track_cnt[i], make_pair(ch.cur_pts[i], ch.ids[i])));
+        cnt_pts_id.push_back(make_pair(ch.track_cnt[i], make_pair(ch.cur_pts[i], ch.local_ids[i])));
 
     sort(cnt_pts_id.begin(), cnt_pts_id.end(),
          [](const pair<int, pair<cv::Point2f, int>> &a, const pair<int, pair<cv::Point2f, int>> &b) {
@@ -239,7 +425,7 @@ void FeatureTracker::setMaskForChannel(ChannelState& ch)
          });
 
     ch.cur_pts.clear();
-    ch.ids.clear();
+    ch.local_ids.clear();
     ch.track_cnt.clear();
 
     for (auto &it : cnt_pts_id)
@@ -247,7 +433,7 @@ void FeatureTracker::setMaskForChannel(ChannelState& ch)
         if (ch.mask.at<uchar>(it.second.first) == 255)
         {
             ch.cur_pts.push_back(it.second.first);
-            ch.ids.push_back(it.second.second);
+            ch.local_ids.push_back(it.second.second);
             ch.track_cnt.push_back(it.first);
             cv::circle(ch.mask, it.second.first, MIN_DIST, 0, -1);
         }
@@ -312,7 +498,7 @@ void FeatureTracker::drawTrackPolar()
             }
             // 绘制轨迹箭头(固定通道颜色)
             for (size_t j = 0; j < ch.cur_pts.size(); j++) {
-                auto it = ch.prevLeftPtsMap.find(ch.ids[j]);
+                auto it = ch.prevLeftPtsMap.find(ch.local_ids[j]);
                 if (it != ch.prevLeftPtsMap.end()) {
                     cv::Point2f from(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
                     cv::Point2f to(it->second.x + gridCol * w, it->second.y + gridRow * h);
@@ -376,12 +562,12 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
         if (!ch.prev_pts.empty() && !ch.prev_img.empty()) {
             MatchResult mr = matcher_->track(
                 ch.prev_img, ch.cur_img,
-                ch.prev_pts, ch.ids, ch.track_cnt,
+                ch.prev_pts, ch.local_ids, ch.track_cnt,
                 ch.prev_brief_desc);
 
             ch.prev_pts = std::move(mr.prev_pts);
             ch.cur_pts  = std::move(mr.cur_pts);
-            ch.ids      = std::move(mr.ids);
+            ch.local_ids      = std::move(mr.ids);
             ch.track_cnt = std::move(mr.track_cnt);
         }
 
@@ -394,7 +580,7 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
             }
             reduceVector(ch.prev_pts, status);
             reduceVector(ch.cur_pts, status);
-            reduceVector(ch.ids, status);
+            reduceVector(ch.local_ids, status);
             reduceVector(ch.track_cnt, status);
         }
 
@@ -437,10 +623,10 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
             ch.n_pts.clear();
         }
 
-        // ---- 2f. 新特征加入, 分配全局唯一 ID ----
+        // ---- 2f. 新特征加入, 分配局部唯一 ID ----
         for (auto &p : ch.n_pts) {
             ch.cur_pts.push_back(p);
-            ch.ids.push_back(n_id++);
+            ch.local_ids.push_back(ch.next_local_id++);
             ch.track_cnt.push_back(1);
         }
 
@@ -456,15 +642,15 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
 
         // 构建当前帧 undistorted map
         map<int, cv::Point2f> cur_un_pts_map;
-        for (size_t i = 0; i < ch.ids.size(); i++)
-            cur_un_pts_map[ch.ids[i]] = ch.cur_un_pts[i];
+        for (size_t i = 0; i < ch.local_ids.size(); i++)
+            cur_un_pts_map[ch.local_ids[i]] = ch.cur_un_pts[i];
 
         // 计算速度
         vector<cv::Point2f> vel;
         if (!ch.prev_un_pts_map.empty()) {
             double dt = ch.cur_time - ch.prev_time;
-            for (size_t i = 0; i < ch.ids.size(); i++) {
-                auto it = ch.prev_un_pts_map.find(ch.ids[i]);
+            for (size_t i = 0; i < ch.local_ids.size(); i++) {
+                auto it = ch.prev_un_pts_map.find(ch.local_ids[i]);
                 if (it != ch.prev_un_pts_map.end()) {
                     double vx = (ch.cur_un_pts[i].x - it->second.x) / dt;
                     double vy = (ch.cur_un_pts[i].y - it->second.y) / dt;
@@ -482,34 +668,21 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
         ch.prev_img = ch.cur_img.clone();
         ch.prev_pts = ch.cur_pts;
         ch.prev_un_pts = ch.cur_un_pts;
-        ch.prev_un_pts_map = std::move(ch.cur_un_pts_map);
+        ch.prev_un_pts_map = std::move(cur_un_pts_map);
         ch.prev_time = ch.cur_time;
         ch.prevLeftPtsMap.clear();
         for (size_t i = 0; i < ch.cur_pts.size(); i++)
-            ch.prevLeftPtsMap[ch.ids[i]] = ch.cur_pts[i];
+            ch.prevLeftPtsMap[ch.local_ids[i]] = ch.cur_pts[i];
     }
 
     // =============================================
-    // 3. 合并所有通道结果 → VINS 格式
+    // 3. 全局特征池注册与合并
     // =============================================
-    map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>> featureFrame;
-    for (const auto& ch : channels) {
-        if (ch.cur_img.empty()) continue;
-        for (size_t i = 0; i < ch.ids.size(); i++) {
-            int feature_id = ch.ids[i];
-            double x = ch.cur_un_pts[i].x;
-            double y = ch.cur_un_pts[i].y;
-            double z = 1;
-            double p_u = ch.cur_pts[i].x;
-            double p_v = ch.cur_pts[i].y;
-            double velocity_x = ch.pts_velocity[i].x;
-            double velocity_y = ch.pts_velocity[i].y;
-
-            Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
-            xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-            featureFrame[feature_id].emplace_back(0, xyz_uv_velocity);
-        }
-    }
+    global_pool_.beginFrame();
+    global_pool_.propagateTracked(channels);
+    global_pool_.registerUnboundFeatures(channels, MIN_DIST);
+    auto featureFrame = global_pool_.buildFeatureFrame(channels);
+    global_pool_.endFrame();
 
     // =============================================
     // 4. 可视化
@@ -833,16 +1006,29 @@ void FeatureTracker::setPrediction(map<int, Eigen::Vector3d> &predictPts)
 void FeatureTracker::removeOutliers(set<int> &removePtsIds)
 {
     if (isPolarMode()) {
+        auto global_to_local = global_pool_.getGlobalToLocalMap();
+
+        map<string, set<int>> removeLocalIdsPerChannel;
+        for (int gid : removePtsIds) {
+            auto it = global_to_local.find(gid);
+            if (it != global_to_local.end()) {
+                for (const auto& [ch_name, local_id] : it->second) {
+                    removeLocalIdsPerChannel[ch_name].insert(local_id);
+                }
+            }
+        }
+
         for (auto& ch : channels) {
             vector<uchar> status;
-            for (size_t i = 0; i < ch.ids.size(); i++) {
-                if (removePtsIds.count(ch.ids[i]))
+            for (size_t i = 0; i < ch.local_ids.size(); i++) {
+                auto it = removeLocalIdsPerChannel.find(ch.name);
+                if (it != removeLocalIdsPerChannel.end() && it->second.count(ch.local_ids[i]))
                     status.push_back(0);
                 else
                     status.push_back(1);
             }
             reduceVector(ch.prev_pts, status);
-            reduceVector(ch.ids, status);
+            reduceVector(ch.local_ids, status);
             reduceVector(ch.track_cnt, status);
         }
     } else {
