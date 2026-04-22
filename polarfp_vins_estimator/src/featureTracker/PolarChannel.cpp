@@ -25,18 +25,14 @@
 #include <vector>
 #include <algorithm>
 
-/**
- * @brief 盒滤波（均值滤波）辅助函数，使用 BORDER_REPLICATE 复制边界
- */
+/** @brief 盒滤波辅助函数，使用BORDER_REPLICATE处理边界 */
 static cv::Mat boxFilter2D(const cv::Mat& src, int radius) {
     cv::Mat dst;
     cv::boxFilter(src, dst, -1, cv::Size(radius, radius), cv::Point(-1, -1), true, cv::BORDER_REPLICATE);
     return dst;
 }
 
-/**
- * @brief 单通道导向滤波实现
- */
+/** @brief 单通道导向滤波实现（基于均值滤波的局部线性模型） */
 cv::Mat guidedFilterSingle(const cv::Mat& I, const cv::Mat& p, int r, double eps) {
     cv::Mat mean_I  = boxFilter2D(I, 2 * r + 1);
     cv::Mat mean_p  = boxFilter2D(p, 2 * r + 1);
@@ -55,35 +51,7 @@ cv::Mat guidedFilterSingle(const cv::Mat& I, const cv::Mat& p, int r, double eps
     return mean_a.mul(I) + mean_b;
 }
 
-/**
- * @brief 计算矩阵的指定百分位值
- *
- * 将矩阵展平为一维向量，排序后取指定百分位位置的元素。
- * 用于 DoP 归一化时去除异常高值。
- *
- * @param mat 输入矩阵
- * @param percentile 百分位，如 99.0 表示第 99 百分位
- * @return 对应百分位的值
- */
-double _calculatePercentile(const cv::Mat& mat, double percentile) {
-    cv::Mat flattened = mat.reshape(1, 1);
-    std::vector<double> sorted;
-    flattened.copyTo(sorted);
-    std::sort(sorted.begin(), sorted.end());
-    int index = static_cast<int>((percentile / 100.0) * (sorted.size() - 1));
-    return sorted[index];
-}
-
-/**
- * @brief 将 4 个原始通道融合为灰度图
- *
- * 使用 BT.601 加权系数：R=0.299, G=0.587, B=0.114。
- * 两个绿色通道取平均后参与计算。
- * 输出图像通过双三次插值放大 2x。
- *
- * @param img_xx [R, G1, G2, B] 四个通道的原始子采样图像
- * @return 融合灰度图（double 类型，尺寸 2x）
- */
+/** @brief 将4个原始通道按BT.601系数融合为灰度图，输出经双三次插值放大2x */
 cv::Mat _raw_chnl_to_gray(const std::vector<cv::Mat>& img_xx) {
     int itp = cv::INTER_CUBIC;
     const cv::Mat& img_xx_r = img_xx[0];
@@ -113,16 +81,7 @@ cv::Mat _raw_chnl_to_gray(const std::vector<cv::Mat>& img_xx) {
     return img_xx_gray;
 }
 
-/**
- * @brief 将 4 个原始通道合成为 RGB 彩色图
- *
- * R 通道直接用 90° 子采样，B 通道用 0° 子采样，
- * G 通道取 45° 和 135° 的平均值。
- * 输出图像通过双三次插值放大 2x。
- *
- * @param img_xx [R, G1, G2, B] 四个通道的原始子采样图像
- * @return RGB 彩色图（8bit，尺寸 2x）
- */
+/** @brief 将4个原始通道合成为RGB彩色图（R=90°, G=(45°+135°)/2, B=0°），输出放大2x */
 cv::Mat _raw_chnl_to_rgb(const std::vector<cv::Mat>& img_xx) {
     int itp = cv::INTER_CUBIC;
     const cv::Mat& img_xx_r = img_xx[0];
@@ -153,22 +112,7 @@ cv::Mat _raw_chnl_to_rgb(const std::vector<cv::Mat>& img_xx) {
 }
 
 
-/**
- * @brief 核心函数：将偏振原始图像转换为 Stokes 参数
- *
- * 详细步骤：
- *   1. 从 2x2 超像素网格中按偏移量采样出 4 个偏振角度子图像
- *      - (0,0) → 90°, (0,1) → 45°, (1,0) → 135°, (1,1) → 0°
- *   2. 计算 Stokes 向量 S0, S1, S2
- *   3. 从 S1, S2 计算 sin(AoP) 和 cos(AoP)
- *   4. 从 S1, S2 计算 AoP = 0.5 * atan2(S2, S1)
- *   5. 将 AoP 映射为 HSV 彩色可视化
- *   6. 计算 DoP = sqrt(S1²+S2²) / S0，做百分位归一化
- *   7. 量化所有输出为 8bit 图像
- *
- * @param img_raw 输入原始偏振图像（单通道 8bit）
- * @return PolarChannelResult 包含所有计算结果和可视化
- */
+/** @brief 核心函数：从2x2微偏振阵列原始图像解码Stokes参数（S0/DoP/AoP）及可视化 */
 PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cfg) {
     assert(img_raw.channels() == 1 && img_raw.dims == 2);
 

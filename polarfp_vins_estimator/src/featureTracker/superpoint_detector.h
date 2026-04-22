@@ -20,12 +20,11 @@ struct SuperPointDetectorImpl;
 
 /**
  * @class SuperPointFeatureDetector
- * @brief SuperPoint feature detector wrapped as FeatureDetector.
+ * @brief SuperPoint特征检测器，继承自FeatureDetector
  *
- * Supports both single-image detect() and batch detectBatchForChannels().
- * In batch mode: all channel images are inferred at once, then per-channel
- * detect() calls return cached results.
- * In single-image mode (fallback for non-polar): performs single-image inference.
+ * 支持单张图像detect()和批量detectBatchForChannels()两种模式。
+ * 批量模式下：所有通道图像一次性推理，之后per-channel detect()返回缓存结果。
+ * 单图像模式（非偏振回退）：执行单张图像推理。
  */
 class SuperPointFeatureDetector : public FeatureDetector {
 public:
@@ -35,27 +34,27 @@ public:
 
     std::string name() const override { return "SuperPoint"; }
 
-    // FeatureDetector interface: per-channel detect
-    // Batch mode: returns cached result from detectBatchForChannels
-    // Fallback: single-image inference + mask filter + max_cnt truncation
+    // FeatureDetector接口：per-channel detect
+    // 批量模式：返回detectBatchForChannels的缓存结果
+    // 回退模式：单张推理 + mask过滤 + max_cnt截断
     std::vector<cv::Point2f> detect(const cv::Mat& image, const cv::Mat& mask,
                                     int max_cnt) const override;
 
-    // Batch inference: all channels at once, stores results internally
+    // 批量推理：所有通道一次性推理，内部存储结果
     void detectBatchForChannels(
         const std::vector<cv::Mat>& images,
         const std::vector<cv::Mat>& masks,
         const std::vector<int>& max_cnts);
 
 private:
-    // Internal single-image detection
+    // 内部单张图像检测
     std::vector<cv::Point2f> detectSingleImage(const cv::Mat& image) const;
 
-    // PIMPL: isolates <torch/script.h>
+    // PIMPL：隔离<torch/script.h>
     std::unique_ptr<SuperPointDetectorImpl> impl_;
     bool initialized_ = false;
 
-    // Batch inference cache
+    // 批量推理缓存
     mutable bool batch_cached_ = false;
     mutable std::vector<std::vector<cv::Point2f>> batch_results_;
     mutable size_t current_channel_idx_ = 0;

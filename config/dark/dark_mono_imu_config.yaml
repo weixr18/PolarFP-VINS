@@ -4,10 +4,9 @@
 # 0. common parameters
 ###################################################
 
-imu: 1         
-num_of_cam: 1  
-use_polar: 1
-polar_channels: "s0,dop,aopsin,aopcos" # "s0,dop,aopsin,aopcos"
+imu: 1
+num_of_cam: 1
+polar_channels: "s0, dop, aopsin, aopcos"
 polar_hash_grid_size: 5   # 全局特征池空间哈希网格大小(px)，默认5
 
 # topic and paths
@@ -15,7 +14,7 @@ imu_topic: "/ahrs_driver_node/imu_data"
 image0_topic: "/arena_cam_qc1/image_raw"
 image1_topic: "/arena_cam_qc2/image_raw"
 output_path: "/home/dhz/SLAM/output/PolarFP-VINS"
-output_name: "dark_2026-04-16-13-33-43_MI_all"
+output_name: "dark_2026-04-16-14-15-03_MI_all"
 
 ###################################################
 # 1.1 Frontend - filter params
@@ -46,7 +45,7 @@ fast_threshold: 20
 fast_nonmax_suppression: 1
 
 # SuperPoint 参数 (feature_detector_type=2 时使用)
-superpoint_model_path: "/home/dhz/ws/vi_catkin_ws/src/PolarFP-VINS/vins_estimator/nn/superpoint_v1.pt"
+superpoint_model_path: "/home/dhz/ws/vi_catkin_ws/src/PolarFP-VINS/polarfp_vins_estimator/nn/superpoint_v1.pt"
 superpoint_use_gpu: 1
 superpoint_keypoint_threshold: 0.015
 superpoint_nms_radius: 4

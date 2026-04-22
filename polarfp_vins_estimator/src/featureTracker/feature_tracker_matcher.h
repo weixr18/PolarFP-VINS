@@ -56,10 +56,10 @@ public:
         const std::vector<int>& prev_track_cnt,
         const std::vector<uchar>& prev_desc) = 0;
     /**
-     * @brief 提取描述子 (仅 BRIEF 模式需要，LK 返回空向量)
+     * @brief 提取描述子（仅BRIEF模式需要，LK返回空向量）
      * @param image 当前图像
      * @param pts 特征点位置
-     * @return 扁平描述子字节: [feat0_desc, feat1_desc, ...]
+     * @return 扁平描述子字节数组 [feat0_desc, feat1_desc, ...]
      */
     virtual std::vector<uchar> extractDescriptors(
         const cv::Mat& image, const std::vector<cv::Point2f>& pts) const;
@@ -67,9 +67,9 @@ public:
 
 /**
  * @class LKFlowMatcher
- * @brief Lucas-Kanade 光流匹配器 (含双向检查)
+ * @brief Lucas-Kanade光流匹配器（含双向检查）
  *
- * 等价于原版 VINS 的 calcOpticalFlowPyrLK + reverse check。
+ * 等价于原版VINS的calcOpticalFlowPyrLK + reverse check。
  */
 class LKFlowMatcher : public FeatureMatcher {
 public:
@@ -93,10 +93,10 @@ private:
 
 /**
  * @class BRIEFFLANNMatcher
- * @brief BRIEF 描述子 + FLANN LSH 匹配器
+ * @brief BRIEF描述子 + FLANN LSH匹配器
  *
- * 提取 BRIEF (或 ORB fallback) 二进制描述子，使用 FLANN LSH index
- * 进行快速 Hamming 距离匹配。
+ * 提取BRIEF（或ORB fallback）二进制描述子，使用FLANN LSH index
+ * 进行快速Hamming距离匹配。
  */
 class BRIEFFLANNMatcher : public FeatureMatcher {
 public:
@@ -119,7 +119,7 @@ private:
     int flann_multi_probe_;
     float match_dist_ratio_;
 
-    // BRIEF 提取器 (xfeatures2d 或 ORB fallback)
+    // BRIEF提取器（xfeatures2d或ORB fallback）
     cv::Ptr<cv::Feature2D> brief_extractor_;
 };
 

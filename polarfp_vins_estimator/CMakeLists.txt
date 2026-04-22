@@ -46,7 +46,7 @@ include_directories(
 
 catkin_package()
 
-add_library(vins_lib
+add_library(polarfp_vins_lib
     src/estimator/parameters.cpp
     src/estimator/estimator.cpp
     src/estimator/feature_manager.cpp
@@ -69,25 +69,25 @@ add_library(vins_lib
 
 # Conditionally add SuperPoint source
 if(USE_SUPERPOINT)
-    target_sources(vins_lib PRIVATE src/featureTracker/superpoint_detector.cpp)
+    target_sources(polarfp_vins_lib PRIVATE src/featureTracker/superpoint_detector.cpp)
 endif()
 
-target_link_libraries(vins_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+target_link_libraries(polarfp_vins_lib ${catkin_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
 
 # Link LibTorch if enabled
 if(USE_SUPERPOINT)
-    target_link_libraries(vins_lib ${TORCH_LIBRARIES})
+    target_link_libraries(polarfp_vins_lib ${TORCH_LIBRARIES})
 endif()
 
 
 add_executable(${PROJECT_PREFIX}_node src/rosNodeTest.cpp)
-target_link_libraries(${PROJECT_PREFIX}_node vins_lib)
+target_link_libraries(${PROJECT_PREFIX}_node polarfp_vins_lib)
 
 # add_executable(test_nlm_filter src/test/test_nlm_filter.cpp)
-# target_link_libraries(test_nlm_filter vins_lib)
+# target_link_libraries(test_nlm_filter polarfp_vins_lib)
 
 # add_executable(test_guide_filter src/test/test_guide_filter.cpp)
-# target_link_libraries(test_guide_filter vins_lib)
+# target_link_libraries(test_guide_filter polarfp_vins_lib)
 
 add_executable(test_visualize src/test/test_visualize.cpp)
-target_link_libraries(test_visualize vins_lib)
+target_link_libraries(test_visualize polarfp_vins_lib)

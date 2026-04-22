@@ -10,6 +10,13 @@
 #include "feature_tracker_detector.h"
 #include "superpoint_detector.h"
 
+/**
+ * @brief GFTT检测器实现：调用cv::goodFeaturesToTrack提取角点
+ * @param image 输入图像（单通道8bit）
+ * @param mask 掩码图像，仅在非零区域检测
+ * @param max_cnt 最大返回特征点数
+ * @return 检测到的特征点坐标列表
+ */
 std::vector<cv::Point2f> GFTTDetector::detect(
     const cv::Mat& image, const cv::Mat& mask, int max_cnt) const
 {
@@ -22,6 +29,13 @@ std::vector<cv::Point2f> GFTTDetector::detect(
     return pts;
 }
 
+/**
+ * @brief FAST检测器实现：提取角点后按响应值排序，经mask过滤后取top-N
+ * @param image 输入图像（单通道8bit）
+ * @param mask 掩码图像，仅在非零区域保留特征点
+ * @param max_cnt 最大返回特征点数
+ * @return 检测到的特征点坐标列表（按响应值降序）
+ */
 std::vector<cv::Point2f> FASTDetector::detect(
     const cv::Mat& image, const cv::Mat& mask, int max_cnt) const
 {
@@ -64,6 +78,11 @@ std::vector<cv::Point2f> FASTDetector::detect(
     return pts;
 }
 
+/**
+ * @brief 工厂函数：根据配置创建对应的特征检测器
+ * @param cfg 检测器配置（包含类型及对应参数）
+ * @return 具体检测器实例（GFTT/FAST/SuperPoint）
+ */
 std::shared_ptr<FeatureDetector> createDetector(const DetectorConfig& cfg)
 {
     switch (cfg.type) {

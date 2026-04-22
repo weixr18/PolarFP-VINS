@@ -9,11 +9,11 @@
 
 /**
  * @file superpoint_detector.cpp
- * @brief SuperPoint detector implementing FeatureDetector interface.
+ * @brief SuperPoint检测器实现，继承FeatureDetector接口
  *
- * Supports batch inference for multi-channel polar frontend:
- *   detectBatchForChannels() — batch N images → per-channel post-process → cache
- *   detect() — returns cached per-channel result (batch mode) or single-image inference (fallback)
+ * 支持多通道偏振前端批量推理：
+ *   detectBatchForChannels() — 批量N张图像 → 逐通道后处理 → 缓存
+ *   detect() — 返回缓存的逐通道结果（批量模式）或单张推理（回退）
  */
 
 #ifdef USE_SUPERPOINT
@@ -24,7 +24,7 @@
 #include <cuda_runtime.h>
 #include <iostream>
 
-// Internal structs (not exposed in header)
+// 内部结构体（不暴露在头文件中）
 struct SuperPointDetectorImpl {
     torch::jit::script::Module model;
     torch::Device device;
@@ -38,9 +38,16 @@ struct SuperPointKeypoint {
 };
 
 // =============================================
-// Constructor / Destructor
+// 构造函数 / 析构函数
 // =============================================
 
+/**
+ * @brief SuperPoint检测器构造函数：加载TorchScript模型，选择GPU/CPU设备并预热
+ * @param model_path TorchScript模型文件路径
+ * @param use_gpu 是否启用GPU推理
+ * @param kp_thresh 关键点分数阈值
+ * @param nms_radius 非极大值抑制半径
+ */
 SuperPointFeatureDetector::SuperPointFeatureDetector(
     const std::string& model_path, bool use_gpu,
     float kp_thresh, int nms_radius)
@@ -83,40 +90,44 @@ SuperPointFeatureDetector::SuperPointFeatureDetector(
     initialized_ = true;
 }
 
+/**
+ * @brief 析构函数：释放PIMPL实现的检测器实例
+ */
 SuperPointFeatureDetector::~SuperPointFeatureDetector() = default;
 
-// =============================================
-// Internal: single-image keypoint detection
-// =============================================
-
+/**
+ * @brief 单张图像SuperPoint检测：图像归一化 → 前向推理 → softmax → NMS → 阈值过滤
+ * @param image 输入图像（单通道8bit）
+ * @return 检测到的特征点坐标列表（原始尺度，未经mask过滤）
+ */
 std::vector<cv::Point2f> SuperPointFeatureDetector::detectSingleImage(
     const cv::Mat& image) const
 {
     if (!initialized_ || image.empty()) return {};
 
-    // Preprocess: 8UC1 → float32 [0, 1]
+    // 预处理：8UC1 → float32 [0, 1]
     cv::Mat img_float;
     image.convertTo(img_float, CV_32FC1, 1.0 / 255.0);
 
-    // .clone() is important — from_blob doesn't own data
+    // .clone()很重要 — from_blob不拥有数据
     auto img_tensor = torch::from_blob(
         img_float.data, {1, 1, image.rows, image.cols}, torch::kFloat32).clone();
 
-    // Forward: returns tuple (detection_map, descriptor_map)
+    // 前向推理：返回tuple (detection_map, descriptor_map)
     auto output = impl_->model.forward({img_tensor.to(impl_->device)});
     auto outputs = output.toTuple();
     auto det_map = outputs->elements()[0].toTensor();
 
-    // Post-process: squeeze batch dim, move to CPU
+    // 后处理：压缩batch维度，移到CPU
     auto det = det_map.squeeze(0).cpu();  // [65, H/8, W/8]
 
-    // Softmax over 65 classes
+    // 对65个类别做softmax
     det = torch::softmax(det, /*dim=*/0);
 
-    // Remove "dust" class (index 64), keep first 64 bins
+    // 移除"dust"类别（索引64），保留前64个bin
     auto det_no_dust = det.slice(/*dim=*/0, /*start=*/0, /*end=*/64);
 
-    // Get max probability and corresponding bin index per spatial location
+    // 获取每个空间位置的最大概率及对应的bin索引
     auto max_vals = std::get<0>(det_no_dust.max(/*dim=*/0));  // [H/8, W/8]
     auto max_indices = std::get<1>(det_no_dust.max(/*dim=*/0));
 
@@ -161,7 +172,7 @@ std::vector<cv::Point2f> SuperPointFeatureDetector::detectSingleImage(
         }
     }
 
-    // Convert to cv::Point2f
+    // 转换为cv::Point2f
     std::vector<cv::Point2f> pts;
     pts.reserve(kpts.size());
     for (const auto& kp : kpts) {
@@ -170,10 +181,14 @@ std::vector<cv::Point2f> SuperPointFeatureDetector::detectSingleImage(
     return pts;
 }
 
-// =============================================
-// Batch inference for multi-channel
-// =============================================
-
+/**
+ * @brief 多通道批量推理：将所有通道图像打包为批量张量一次性前向推理，
+ *        逐通道执行softmax + NMS + 阈值过滤 + mask掩码 + max_cnt截断，
+ *        结果缓存供后续detect()调用返回
+ * @param images 各通道图像列表
+ * @param masks 各通道掩码列表
+ * @param max_cnts 各通道最大特征数列表
+ */
 void SuperPointFeatureDetector::detectBatchForChannels(
     const std::vector<cv::Mat>& images,
     const std::vector<cv::Mat>& masks,
@@ -187,7 +202,7 @@ void SuperPointFeatureDetector::detectBatchForChannels(
     int h = images[0].rows;
     int w = images[0].cols;
 
-    // 1. Pack images into batch tensor [N, H, W] (single-channel, no extra dim needed)
+    // 1. 打包图像为批量张量 [N, H, W]（单通道，无需额外维度）
     auto batch = torch::empty({n, h, w}, torch::kFloat32);
     for (int i = 0; i < n; i++) {
         cv::Mat img_f;
@@ -196,13 +211,13 @@ void SuperPointFeatureDetector::detectBatchForChannels(
         batch[i] = img_tensor;
     }
 
-    // 2. Forward → (detection_maps, descriptor_maps)
-    // Model expects 4D input [N, 1, H, W], so unsqueeze channel dim
+    // 2. 前向推理 → (detection_maps, descriptor_maps)
+    // 模型期望4D输入 [N, 1, H, W]，因此扩展通道维度
     auto input = batch.unsqueeze(1).to(impl_->device);
     auto output = impl_->model.forward({input});
     auto det_maps = output.toTuple()->elements()[0].toTensor().cpu();  // [N, 65, H/8, W/8]
 
-    // 3. Per-image post-processing: softmax → NMS → threshold
+    // 3. 逐图像后处理：softmax → NMS → 阈值过滤
     std::vector<std::vector<SuperPointKeypoint>> all_kpts(n);
     for (int i = 0; i < n; i++) {
         auto det = det_maps[i];  // [65, H/8, W/8]
@@ -250,7 +265,7 @@ void SuperPointFeatureDetector::detectBatchForChannels(
         }
     }
 
-    // 4. Per-channel: mask filter + max_cnt truncation → batch_results_
+    // 4. 逐通道：mask过滤 + max_cnt截断 → 存入batch_results_
     batch_results_.resize(n);
     for (size_t i = 0; i < n; i++) {
         std::vector<cv::Point2f> pts;
@@ -270,10 +285,14 @@ void SuperPointFeatureDetector::detectBatchForChannels(
     current_channel_idx_ = 0;
 }
 
-// =============================================
-// detect() — FeatureDetector interface
-// =============================================
-
+/**
+ * @brief FeatureDetector接口实现：批量模式返回缓存结果，回退模式执行单张推理
+ *        + mask过滤 + max_cnt截断
+ * @param image 输入图像
+ * @param mask 掩码图像
+ * @param max_cnt 最大返回特征点数
+ * @return 检测到的特征点坐标列表
+ */
 std::vector<cv::Point2f> SuperPointFeatureDetector::detect(
     const cv::Mat& image, const cv::Mat& mask, int max_cnt) const
 {
@@ -281,10 +300,10 @@ std::vector<cv::Point2f> SuperPointFeatureDetector::detect(
         return batch_results_[current_channel_idx_++];
     }
 
-    // Fallback: single-image inference (non-polar mode)
+    // 回退：单张图像推理（非偏振模式）
     std::vector<cv::Point2f> pts = detectSingleImage(image);
 
-    // Mask filter
+    // Mask过滤
     if (!mask.empty()) {
         std::vector<cv::Point2f> masked_pts;
         masked_pts.reserve(pts.size());
@@ -298,7 +317,7 @@ std::vector<cv::Point2f> SuperPointFeatureDetector::detect(
         pts = std::move(masked_pts);
     }
 
-    // Top-N truncation
+    // Top-N截断
     if (max_cnt > 0 && static_cast<int>(pts.size()) > max_cnt)
         pts.resize(max_cnt);
 

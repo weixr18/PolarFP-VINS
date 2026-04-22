@@ -22,7 +22,7 @@ include_directories(${CERES_INCLUDE_DIRS})
 
 catkin_package(
     INCLUDE_DIRS include
-    LIBRARIES camera_models
+    LIBRARIES polarfp_camera_models
     CATKIN_DEPENDS roscpp std_msgs
 #    DEPENDS system_lib
     )
@@ -33,7 +33,7 @@ include_directories(
 
 include_directories("include")
 
-add_executable(Calibrations 
+add_executable(polarfp_Calibrations
     src/intrinsic_calib.cc
     src/chessboard/Chessboard.cc
     src/calib/CameraCalibration.cc
@@ -49,7 +49,7 @@ add_executable(Calibrations
     src/gpl/gpl.cc
     src/gpl/EigenQuaternionParameterization.cc)
 
-add_library(camera_models
+add_library(polarfp_camera_models
     src/chessboard/Chessboard.cc
     src/calib/CameraCalibration.cc
     src/camera_models/Camera.cc
@@ -64,5 +64,5 @@ add_library(camera_models
     src/gpl/gpl.cc
     src/gpl/EigenQuaternionParameterization.cc)
 
-target_link_libraries(Calibrations ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
-target_link_libraries(camera_models ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+target_link_libraries(polarfp_Calibrations ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})
+target_link_libraries(polarfp_camera_models ${Boost_LIBRARIES} ${OpenCV_LIBS} ${CERES_LIBRARIES})

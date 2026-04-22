@@ -49,7 +49,6 @@ int SHOW_TRACK;
 int FLOW_BACK;
 
 // Polar mode
-int USE_POLAR = 0;
 std::vector<std::string> POLAR_CHANNELS;
 PolarFilterConfig POLAR_FILTER_CFG;
 int POLAR_HASH_GRID_SIZE = 5;
@@ -224,123 +223,118 @@ void readParameters(std::string config_file)
     }
 
     // Polar mode parameters
-    if (!fsSettings["use_polar"].empty())
-        USE_POLAR = (int)fsSettings["use_polar"];
-
     if (!fsSettings["polar_hash_grid_size"].empty())
         POLAR_HASH_GRID_SIZE = (int)fsSettings["polar_hash_grid_size"];
     else
         POLAR_HASH_GRID_SIZE = 5;
 
-    if (USE_POLAR) {
-        std::string channels_str;
-        fsSettings["polar_channels"] >> channels_str;
-        std::stringstream ss(channels_str);
-        std::string item;
-        while (std::getline(ss, item, ',')) {
-            item.erase(0, item.find_first_not_of(" \t"));
-            item.erase(item.find_last_not_of(" \t") + 1);
-            POLAR_CHANNELS.push_back(item);
-        }
-        if (POLAR_CHANNELS.empty()) {
-            POLAR_CHANNELS = {"s0", "dop"};
-            ROS_WARN("polar_channels not specified, using default: s0,dop");
-        }
-        ROS_INFO("Polar mode enabled, channels: %zu", POLAR_CHANNELS.size());
-        for (const auto& ch : POLAR_CHANNELS)
-            ROS_INFO("  channel: %s", ch.c_str());
+    std::string channels_str;
+    fsSettings["polar_channels"] >> channels_str;
+    std::stringstream ss(channels_str);
+    std::string item;
+    while (std::getline(ss, item, ',')) {
+        item.erase(0, item.find_first_not_of(" \t"));
+        item.erase(item.find_last_not_of(" \t") + 1);
+        POLAR_CHANNELS.push_back(item);
+    }
+    if (POLAR_CHANNELS.empty()) {
+        POLAR_CHANNELS = {"s0", "dop"};
+        ROS_WARN("polar_channels not specified, using default: s0,dop");
+    }
+    ROS_INFO("Polar mode enabled, channels: %zu", POLAR_CHANNELS.size());
+    for (const auto& ch : POLAR_CHANNELS)
+        ROS_INFO("  channel: %s", ch.c_str());
 
-        // 偏振通道滤波参数
-        if (!fsSettings["polar_filter_type"].empty())
-            POLAR_FILTER_CFG.filter_type = static_cast<PolarFilterType>((int)fsSettings["polar_filter_type"]);
+    // 偏振通道滤波参数
+    if (!fsSettings["polar_filter_type"].empty())
+        POLAR_FILTER_CFG.filter_type = static_cast<PolarFilterType>((int)fsSettings["polar_filter_type"]);
 
-        // 双边滤波参数
-        if (POLAR_FILTER_CFG.filter_type == FILTER_BILATERAL) {
-            if (!fsSettings["polar_bilateral_d"].empty())
-                POLAR_FILTER_CFG.bilateral_d = (int)fsSettings["polar_bilateral_d"];
-            if (!fsSettings["polar_bilateral_sigma_color"].empty())
-                POLAR_FILTER_CFG.bilateral_sigmaColor = (double)fsSettings["polar_bilateral_sigma_color"];
-            if (!fsSettings["polar_bilateral_sigma_space"].empty())
-                POLAR_FILTER_CFG.bilateral_sigmaSpace = (double)fsSettings["polar_bilateral_sigma_space"];
-            ROS_INFO("[PolarFP] Bilateral filter: d=%d sigmaColor=%.1f sigmaSpace=%.1f",
-                     POLAR_FILTER_CFG.bilateral_d, POLAR_FILTER_CFG.bilateral_sigmaColor,
-                     POLAR_FILTER_CFG.bilateral_sigmaSpace);
-        }
+    // 双边滤波参数
+    if (POLAR_FILTER_CFG.filter_type == FILTER_BILATERAL) {
+        if (!fsSettings["polar_bilateral_d"].empty())
+            POLAR_FILTER_CFG.bilateral_d = (int)fsSettings["polar_bilateral_d"];
+        if (!fsSettings["polar_bilateral_sigma_color"].empty())
+            POLAR_FILTER_CFG.bilateral_sigmaColor = (double)fsSettings["polar_bilateral_sigma_color"];
+        if (!fsSettings["polar_bilateral_sigma_space"].empty())
+            POLAR_FILTER_CFG.bilateral_sigmaSpace = (double)fsSettings["polar_bilateral_sigma_space"];
+        ROS_INFO("[PolarFP] Bilateral filter: d=%d sigmaColor=%.1f sigmaSpace=%.1f",
+                 POLAR_FILTER_CFG.bilateral_d, POLAR_FILTER_CFG.bilateral_sigmaColor,
+                 POLAR_FILTER_CFG.bilateral_sigmaSpace);
+    }
 
-        // 导向滤波参数
-        if (POLAR_FILTER_CFG.filter_type == FILTER_GUIDED) {
-            if (!fsSettings["polar_guided_radius"].empty())
-                POLAR_FILTER_CFG.guided_radius = (int)fsSettings["polar_guided_radius"];
-            if (!fsSettings["polar_guided_eps"].empty())
-                POLAR_FILTER_CFG.guided_eps = (double)fsSettings["polar_guided_eps"];
-            ROS_INFO("[PolarFP] Guided filter: radius=%d eps=%.4f",
-                     POLAR_FILTER_CFG.guided_radius, POLAR_FILTER_CFG.guided_eps);
-        }
+    // 导向滤波参数
+    if (POLAR_FILTER_CFG.filter_type == FILTER_GUIDED) {
+        if (!fsSettings["polar_guided_radius"].empty())
+            POLAR_FILTER_CFG.guided_radius = (int)fsSettings["polar_guided_radius"];
+        if (!fsSettings["polar_guided_eps"].empty())
+            POLAR_FILTER_CFG.guided_eps = (double)fsSettings["polar_guided_eps"];
+        ROS_INFO("[PolarFP] Guided filter: radius=%d eps=%.4f",
+                 POLAR_FILTER_CFG.guided_radius, POLAR_FILTER_CFG.guided_eps);
+    }
 
-        // NLM 滤波参数
-        if (POLAR_FILTER_CFG.filter_type == FILTER_NLM) {
-            if (!fsSettings["polar_nlm_h"].empty())
-                POLAR_FILTER_CFG.nlm_h = (float)(double)fsSettings["polar_nlm_h"];
-            if (!fsSettings["polar_nlm_template"].empty())
-                POLAR_FILTER_CFG.nlm_template = (int)fsSettings["polar_nlm_template"];
-            if (!fsSettings["polar_nlm_search"].empty())
-                POLAR_FILTER_CFG.nlm_search = (int)fsSettings["polar_nlm_search"];
-            ROS_INFO("[PolarFP] NLM filter: h=%.1f template=%d search=%d",
-                     POLAR_FILTER_CFG.nlm_h, POLAR_FILTER_CFG.nlm_template,
-                     POLAR_FILTER_CFG.nlm_search);
-        }
+    // NLM 滤波参数
+    if (POLAR_FILTER_CFG.filter_type == FILTER_NLM) {
+        if (!fsSettings["polar_nlm_h"].empty())
+            POLAR_FILTER_CFG.nlm_h = (float)(double)fsSettings["polar_nlm_h"];
+        if (!fsSettings["polar_nlm_template"].empty())
+            POLAR_FILTER_CFG.nlm_template = (int)fsSettings["polar_nlm_template"];
+        if (!fsSettings["polar_nlm_search"].empty())
+            POLAR_FILTER_CFG.nlm_search = (int)fsSettings["polar_nlm_search"];
+        ROS_INFO("[PolarFP] NLM filter: h=%.1f template=%d search=%d",
+                 POLAR_FILTER_CFG.nlm_h, POLAR_FILTER_CFG.nlm_template,
+                 POLAR_FILTER_CFG.nlm_search);
+    }
 
-        // 中值滤波参数
-        if (POLAR_FILTER_CFG.filter_type == FILTER_MEDIAN) {
-            if (!fsSettings["polar_median_kernel_size"].empty())
-                POLAR_FILTER_CFG.median_kernel_size = (int)fsSettings["polar_median_kernel_size"];
-            ROS_INFO("[PolarFP] Median filter: kernel_size=%d",
-                     POLAR_FILTER_CFG.median_kernel_size);
-        }
+    // 中值滤波参数
+    if (POLAR_FILTER_CFG.filter_type == FILTER_MEDIAN) {
+        if (!fsSettings["polar_median_kernel_size"].empty())
+            POLAR_FILTER_CFG.median_kernel_size = (int)fsSettings["polar_median_kernel_size"];
+        ROS_INFO("[PolarFP] Median filter: kernel_size=%d",
+                 POLAR_FILTER_CFG.median_kernel_size);
+    }
 
-        // Feature detector/matcher parameters
-        if (!fsSettings["feature_detector_type"].empty())
-            FEATURE_DETECTOR_TYPE = (int)fsSettings["feature_detector_type"];
-        if (!fsSettings["fast_threshold"].empty())
-            FAST_THRESHOLD = (int)fsSettings["fast_threshold"];
-        if (!fsSettings["fast_nonmax_suppression"].empty())
-            FAST_NONMAX_SUPPRESSION = (int)fsSettings["fast_nonmax_suppression"];
-        if (!fsSettings["feature_matcher_type"].empty())
-            FEATURE_MATCHER_TYPE = (int)fsSettings["feature_matcher_type"];
-        if (!fsSettings["brief_descriptor_bytes"].empty())
-            BRIEF_DESCRIPTOR_BYTES = (int)fsSettings["brief_descriptor_bytes"];
-        if (!fsSettings["flann_lsh_tables"].empty())
-            FLANN_LSH_TABLES = (int)fsSettings["flann_lsh_tables"];
-        if (!fsSettings["flann_lsh_key_size"].empty())
-            FLANN_LSH_KEY_SIZE = (int)fsSettings["flann_lsh_key_size"];
-        if (!fsSettings["flann_multi_probe"].empty())
-            FLANN_MULTI_PROBE = (int)fsSettings["flann_multi_probe"];
-        if (!fsSettings["brief_match_dist_ratio"].empty())
-            BRIEF_MATCH_DIST_RATIO = (float)(double)fsSettings["brief_match_dist_ratio"];
+    // Feature detector/matcher parameters
+    if (!fsSettings["feature_detector_type"].empty())
+        FEATURE_DETECTOR_TYPE = (int)fsSettings["feature_detector_type"];
+    if (!fsSettings["fast_threshold"].empty())
+        FAST_THRESHOLD = (int)fsSettings["fast_threshold"];
+    if (!fsSettings["fast_nonmax_suppression"].empty())
+        FAST_NONMAX_SUPPRESSION = (int)fsSettings["fast_nonmax_suppression"];
+    if (!fsSettings["feature_matcher_type"].empty())
+        FEATURE_MATCHER_TYPE = (int)fsSettings["feature_matcher_type"];
+    if (!fsSettings["brief_descriptor_bytes"].empty())
+        BRIEF_DESCRIPTOR_BYTES = (int)fsSettings["brief_descriptor_bytes"];
+    if (!fsSettings["flann_lsh_tables"].empty())
+        FLANN_LSH_TABLES = (int)fsSettings["flann_lsh_tables"];
+    if (!fsSettings["flann_lsh_key_size"].empty())
+        FLANN_LSH_KEY_SIZE = (int)fsSettings["flann_lsh_key_size"];
+    if (!fsSettings["flann_multi_probe"].empty())
+        FLANN_MULTI_PROBE = (int)fsSettings["flann_multi_probe"];
+    if (!fsSettings["brief_match_dist_ratio"].empty())
+        BRIEF_MATCH_DIST_RATIO = (float)(double)fsSettings["brief_match_dist_ratio"];
 
-        const char* det_names[] = {"GFTT", "FAST", "SUPERPOINT"};
-        const char* match_names[] = {"LK_FLOW", "BRIEF_FLANN"};
-        ROS_INFO("[PolarFP] Detector: %s, Matcher: %s",
-                 FEATURE_DETECTOR_TYPE < 3 ? det_names[FEATURE_DETECTOR_TYPE] : "unknown",
-                 FEATURE_MATCHER_TYPE < 2 ? match_names[FEATURE_MATCHER_TYPE] : "unknown");
+    const char* det_names[] = {"GFTT", "FAST", "SUPERPOINT"};
+    const char* match_names[] = {"LK_FLOW", "BRIEF_FLANN"};
+    ROS_INFO("[PolarFP] Detector: %s, Matcher: %s",
+             FEATURE_DETECTOR_TYPE < 3 ? det_names[FEATURE_DETECTOR_TYPE] : "unknown",
+             FEATURE_MATCHER_TYPE < 2 ? match_names[FEATURE_MATCHER_TYPE] : "unknown");
 
-        // SuperPoint parameters
-        if (FEATURE_DETECTOR_TYPE == 2) {
-            if (!fsSettings["superpoint_model_path"].empty()) {
-                fsSettings["superpoint_model_path"] >> SUPERPOINT_MODEL_PATH;
-                // Resolve relative path
-                if (SUPERPOINT_MODEL_PATH[0] != '/') {
-                    SUPERPOINT_MODEL_PATH = configPath + "/" + SUPERPOINT_MODEL_PATH;
-                }
+    // SuperPoint parameters
+    if (FEATURE_DETECTOR_TYPE == 2) {
+        if (!fsSettings["superpoint_model_path"].empty()) {
+            fsSettings["superpoint_model_path"] >> SUPERPOINT_MODEL_PATH;
+            // Resolve relative path
+            if (SUPERPOINT_MODEL_PATH[0] != '/') {
+                SUPERPOINT_MODEL_PATH = configPath + "/" + SUPERPOINT_MODEL_PATH;
             }
-            if (!fsSettings["superpoint_use_gpu"].empty())
-                SUPERPOINT_USE_GPU = (int)fsSettings["superpoint_use_gpu"];
-            if (!fsSettings["superpoint_keypoint_threshold"].empty())
-                SUPERPOINT_KEYPOINT_THRESHOLD = (float)(double)fsSettings["superpoint_keypoint_threshold"];
-            if (!fsSettings["superpoint_nms_radius"].empty())
-                SUPERPOINT_NMS_RADIUS = (int)fsSettings["superpoint_nms_radius"];
-            ROS_INFO("[PolarFP] SuperPoint model: %s, GPU: %d", SUPERPOINT_MODEL_PATH.c_str(), SUPERPOINT_USE_GPU);
         }
+        if (!fsSettings["superpoint_use_gpu"].empty())
+            SUPERPOINT_USE_GPU = (int)fsSettings["superpoint_use_gpu"];
+        if (!fsSettings["superpoint_keypoint_threshold"].empty())
+            SUPERPOINT_KEYPOINT_THRESHOLD = (float)(double)fsSettings["superpoint_keypoint_threshold"];
+        if (!fsSettings["superpoint_nms_radius"].empty())
+            SUPERPOINT_NMS_RADIUS = (int)fsSettings["superpoint_nms_radius"];
+        ROS_INFO("[PolarFP] SuperPoint model: %s, GPU: %d", SUPERPOINT_MODEL_PATH.c_str(), SUPERPOINT_USE_GPU);
     }
 
     fsSettings.release();

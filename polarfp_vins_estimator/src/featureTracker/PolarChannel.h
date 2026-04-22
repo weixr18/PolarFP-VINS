@@ -35,22 +35,7 @@
 /** 防止除零的小常数 */
 const double EPSILON = 1e-6;
 
-/** DoP 归一化时使用的百分位阈值，用于去除异常高值 */
-const double DOP_PERCENTILE = 99.0;
-
-/**
- * @brief 计算矩阵的指定百分位值
- * @param mat 输入矩阵（任意类型）
- * @param percentile 百分位 [0, 100]
- * @return 排序后对应位置的元素值
- */
-double _calculatePercentile(const cv::Mat& mat, double percentile);
-
-/**
- * @brief 将 4 通道原始数据转换为灰度图（加权平均）
- * @param img_xx 长度为 4 的 Mat 向量，分别对应 R, G1, G2, B 通道
- * @return 融合后的灰度图，尺寸放大 2x（双三次插值）
- */
+/** @brief 将4通道原始数据融合为灰度图（BT.601加权），输出经双三次插值放大2x */
 cv::Mat _raw_chnl_to_gray(const std::vector<cv::Mat>& img_xx);
 
 /**
@@ -129,22 +114,10 @@ struct PolarFilterConfig {
  * @return PolarChannelResult 包含所有通道和可视化结果
  */
 
-/**
- * @brief 单通道导向滤波（Guided Filter）
- *
- * 以引导图 I 的局部线性模型来滤波输入图 p。在每个局部窗口内，
- * 输出 q = a*I + b，使得 q 接近 p 且平滑。由于使用 S0（强度图）
- * 作为引导图，可以在平滑噪声的同时保留与强度边缘对齐的偏振
- * 通道边缘，避免 DoP/AoP 在物体边界处模糊。
- *
- * @param I   引导图像（CV_64F，通常使用 S0 强度图）
- * @param p   待滤波图像（CV_64F，如 DoP / sin(AoP) / cos(AoP)）
- * @param r   局部窗口半径（核大小 = 2r+1）
- * @param eps 正则化参数，越大平滑越强
- * @return    滤波后图像（CV_64F）
- */
+/** @brief 单通道导向滤波，以S0强度图为引导，在平滑噪声的同时保留边缘 */
 cv::Mat guidedFilterSingle(const cv::Mat& I, const cv::Mat& p, int r, double eps);
 
+/** @brief 核心函数：将微偏振阵列原始图像解码为Stokes参数（S0/DoP/AoP）及各通道可视化 */
 PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cfg = {});
 
 #endif // _POLAR_CHANNEL_H

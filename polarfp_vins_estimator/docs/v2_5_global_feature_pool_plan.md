@@ -45,7 +45,7 @@
 
 ### 3.1 `ChannelState` 改动
 
-文件：`vins_estimator/src/featureTracker/feature_tracker.h`（约第 62–86 行）
+文件：`polarfp_vins_estimator/src/featureTracker/feature_tracker.h`（约第 62–86 行）
 
 在 `ChannelState` 中增加局部 ID 计数器，并修改 `ids` 字段语义：
 
@@ -518,10 +518,10 @@ map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>
 
 | 文件 | 变更类型 | 说明 |
 |---|---|---|
-| `vins_estimator/src/featureTracker/feature_tracker.h` | 修改 + 新增 | `ChannelState` 重命名 `ids`->`local_ids`，添加 `next_local_id`；新增 `GlobalFeaturePool`（含完整注释）；`FeatureTracker` 添加 `global_pool_` |
-| `vins_estimator/src/featureTracker/feature_tracker.cpp` | 修改 | 新特征分配改用 `ch.next_local_id++`；`trackImage` 合并逻辑替换为全局池三步调用；新增 `GlobalFeaturePool` 全部方法体（含注释）；修改 `removeOutliers`；所有旧注释同步更新 |
-| `vins_estimator/src/estimator/parameters.h` | 修改 | 新增 `extern int POLAR_HASH_GRID_SIZE;` |
-| `vins_estimator/src/estimator/parameters.cpp` | 修改 | 从 YAML 读取 `polar_hash_grid_size`，默认 5 |
+| `polarfp_vins_estimator/src/featureTracker/feature_tracker.h` | 修改 + 新增 | `ChannelState` 重命名 `ids`->`local_ids`，添加 `next_local_id`；新增 `GlobalFeaturePool`（含完整注释）；`FeatureTracker` 添加 `global_pool_` |
+| `polarfp_vins_estimator/src/featureTracker/feature_tracker.cpp` | 修改 | 新特征分配改用 `ch.next_local_id++`；`trackImage` 合并逻辑替换为全局池三步调用；新增 `GlobalFeaturePool` 全部方法体（含注释）；修改 `removeOutliers`；所有旧注释同步更新 |
+| `polarfp_vins_estimator/src/estimator/parameters.h` | 修改 | 新增 `extern int POLAR_HASH_GRID_SIZE;` |
+| `polarfp_vins_estimator/src/estimator/parameters.cpp` | 修改 | 从 YAML 读取 `polar_hash_grid_size`，默认 5 |
 | `config/dark/dark_mono_imu_config.yaml` | 修改 | 新增 `polar_hash_grid_size: 5` 示例行 |
 | 其他所有文件 | 不变 | 后端、CMake 等均不改动 |
 
@@ -532,7 +532,7 @@ map<int, vector<pair<int, Eigen::Matrix<double, 7, 1>>>>
 cd ~/ws/vi_catkin_ws
 catkin_make
 ```
-确保 `vins_estimator` 编译通过，无 warning。
+确保 `polarfp_vins_estimator` 编译通过，无 warning。
 
 ### 8.2 单元逻辑验证（建议增加临时日志）
 

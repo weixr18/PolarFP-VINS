@@ -111,12 +111,10 @@ void Estimator::setParameter()
     featureTracker.readIntrinsicParameter(CAM_NAMES);
 
     // 配置偏振通道
-    if (USE_POLAR) {
-        featureTracker.setPolarChannels(POLAR_CHANNELS);
-        featureTracker.setPolarFilterConfig(POLAR_FILTER_CFG);
-        featureTracker.setPolarHashGridSize(POLAR_HASH_GRID_SIZE);
-        featureTracker.initDetectorAndMatcher();
-    }
+    featureTracker.setPolarChannels(POLAR_CHANNELS);
+    featureTracker.setPolarFilterConfig(POLAR_FILTER_CFG);
+    featureTracker.setPolarHashGridSize(POLAR_HASH_GRID_SIZE);
+    featureTracker.initDetectorAndMatcher();
 
     std::cout << "MULTIPLE_THREAD is " << MULTIPLE_THREAD << '\n';
     if (MULTIPLE_THREAD && !initThreadFlag)
@@ -555,7 +553,6 @@ void Estimator::processImage(const map<int, vector<pair<int, Eigen::Matrix<doubl
         if (! MULTIPLE_THREAD)
         {
             featureTracker.removeOutliers(removeIndex);
-            predictPtsInNextFrame();
         }
             
         ROS_DEBUG("solver costs: %fms", t_solve.toc());
@@ -1467,41 +1464,6 @@ void Estimator::getPoseInWorldFrame(int index, Eigen::Matrix4d &T)
     T = Eigen::Matrix4d::Identity();
     T.block<3, 3>(0, 0) = Rs[index];
     T.block<3, 1>(0, 3) = Ps[index];
-}
-
-void Estimator::predictPtsInNextFrame()
-{
-    //printf("predict pts in next frame\n");
-    if(frame_count < 2)
-        return;
-    // predict next pose. Assume constant velocity motion
-    Eigen::Matrix4d curT, prevT, nextT;
-    getPoseInWorldFrame(curT);
-    getPoseInWorldFrame(frame_count - 1, prevT);
-    nextT = curT * (prevT.inverse() * curT);
-    map<int, Eigen::Vector3d> predictPts;
-
-    for (auto &it_per_id : f_manager.feature)
-    {
-        if(it_per_id.estimated_depth > 0)
-        {
-            int firstIndex = it_per_id.start_frame;
-            int lastIndex = it_per_id.start_frame + it_per_id.feature_per_frame.size() - 1;
-            //printf("cur frame index  %d last frame index %d\n", frame_count, lastIndex);
-            if((int)it_per_id.feature_per_frame.size() >= 2 && lastIndex == frame_count)
-            {
-                double depth = it_per_id.estimated_depth;
-                Vector3d pts_j = ric[0] * (depth * it_per_id.feature_per_frame[0].point) + tic[0];
-                Vector3d pts_w = Rs[firstIndex] * pts_j + Ps[firstIndex];
-                Vector3d pts_local = nextT.block<3, 3>(0, 0).transpose() * (pts_w - nextT.block<3, 1>(0, 3));
-                Vector3d pts_cam = ric[0].transpose() * (pts_local - tic[0]);
-                int ptsIndex = it_per_id.feature_id;
-                predictPts[ptsIndex] = pts_cam;
-            }
-        }
-    }
-    featureTracker.setPrediction(predictPts);
-    //printf("estimator output %d predict pts\n",(int)predictPts.size());
 }
 
 double Estimator::reprojectionError(Matrix3d &Ri, Vector3d &Pi, Matrix3d &rici, Vector3d &tici,

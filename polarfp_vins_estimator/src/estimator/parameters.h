@@ -68,7 +68,6 @@ extern int SHOW_TRACK;
 extern int FLOW_BACK;
 
 // Polar mode parameters
-extern int USE_POLAR;
 extern std::vector<std::string> POLAR_CHANNELS;
 extern PolarFilterConfig POLAR_FILTER_CFG;
 extern int POLAR_HASH_GRID_SIZE;   // 默认 5 (px)

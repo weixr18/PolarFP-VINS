@@ -10,7 +10,7 @@
 #include "feature_tracker_matcher.h"
 #include <opencv2/features2d.hpp>
 
-// BRIEF is in opencv_contrib (xfeatures2d). Try to include it; fall back to ORB.
+// BRIEF定义在opencv_contrib(xfeatures2d)中，尝试包含；否则回退到ORB
 #ifdef HAVE_OPENCV_XFEATURES2D
 #include <opencv2/xfeatures2d.hpp>
 #endif
@@ -29,6 +29,16 @@ std::vector<uchar> FeatureMatcher::extractDescriptors(
 // LKFlowMatcher
 // ============================================================
 
+/**
+ * @brief LK光流匹配器跟踪实现：前向光流 + 可选反向检查，剔除误匹配
+ * @param prev_img 上一帧图像
+ * @param cur_img 当前帧图像
+ * @param prev_pts 上一帧特征点
+ * @param prev_ids 上一帧特征点ID
+ * @param prev_track_cnt 上一帧跟踪计数
+ * @param prev_desc 上一帧描述子（LK模式未使用）
+ * @return 匹配结果（前后帧对应点、ID、跟踪计数）
+ */
 MatchResult LKFlowMatcher::track(
     const cv::Mat& prev_img, const cv::Mat& cur_img,
     const std::vector<cv::Point2f>& prev_pts,
@@ -89,6 +99,14 @@ MatchResult LKFlowMatcher::track(
 // BRIEFFLANNMatcher
 // ============================================================
 
+/**
+ * @brief BRIEF+FLANN匹配器构造函数：初始化BRIEF描述子提取器（或ORB回退）
+ * @param brief_bytes 描述子字节数
+ * @param flann_lsh_tables FLANN LSH哈希表数量
+ * @param flann_lsh_key_size 哈希键大小
+ * @param flann_multi_probe 多探测层级
+ * @param match_dist_ratio 匹配距离比率阈值（Lowe's ratio test）
+ */
 BRIEFFLANNMatcher::BRIEFFLANNMatcher(
     int brief_bytes, int flann_lsh_tables,
     int flann_lsh_key_size, int flann_multi_probe,
@@ -101,13 +119,24 @@ BRIEFFLANNMatcher::BRIEFFLANNMatcher(
 #ifdef HAVE_OPENCV_XFEATURES2D
     brief_extractor_ = cv::xfeatures2d::BriefDescriptorExtractor::create(brief_bytes_);
 #else
-    // ORB fallback: also produces binary descriptors compatible with Hamming/FLANN-LSH
+    // ORB回退：也产生二进制描述子，兼容Hamming/FLANN-LSH
     brief_extractor_ = cv::ORB::create(5000, 1.2f, 8, 31, 0, 2,
                                         cv::ORB::HARRIS_SCORE, 31, 20);
-    // Note: ORB uses 32 bytes (256 bits), same as BriefDescriptorExtractor::BYTES
+    // 注意：ORB使用32字节（256位），与BriefDescriptorExtractor::BYTES相同
 #endif
 }
 
+/**
+ * @brief BRIEF+FLANN匹配器跟踪实现：检测当前帧关键点，提取描述子，
+ *        构建FLANN-LSH索引后用Hamming距离 + ratio test进行匹配
+ * @param prev_img 上一帧图像（未使用）
+ * @param cur_img 当前帧图像
+ * @param prev_pts 上一帧特征点
+ * @param prev_ids 上一帧特征点ID
+ * @param prev_track_cnt 上一帧跟踪计数
+ * @param prev_desc 上一帧扁平描述子字节数组
+ * @return 匹配结果
+ */
 MatchResult BRIEFFLANNMatcher::track(
     const cv::Mat& /*prev_img*/, const cv::Mat& cur_img,
     const std::vector<cv::Point2f>& prev_pts,
@@ -176,6 +205,12 @@ MatchResult BRIEFFLANNMatcher::track(
     return result;
 }
 
+/**
+ * @brief 提取BRIEF/ORB二进制描述子：将Point2f转为KeyPoint后调用提取器
+ * @param image 当前帧图像
+ * @param pts 特征点坐标列表
+ * @return 扁平描述子字节数组 [feat0_desc, feat1_desc, ...]
+ */
 std::vector<uchar> BRIEFFLANNMatcher::extractDescriptors(
     const cv::Mat& image, const std::vector<cv::Point2f>& pts) const
 {
@@ -206,6 +241,11 @@ std::vector<uchar> BRIEFFLANNMatcher::extractDescriptors(
 // Factory
 // ============================================================
 
+/**
+ * @brief 工厂函数：根据配置创建对应的特征匹配器
+ * @param cfg 匹配器配置（包含类型及对应参数）
+ * @return 具体匹配器实例（LK_FLOW/BRIEF_FLANN）
+ */
 std::shared_ptr<FeatureMatcher> createMatcher(const MatcherConfig& cfg)
 {
     switch (cfg.type) {

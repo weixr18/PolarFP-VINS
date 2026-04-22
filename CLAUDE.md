@@ -11,7 +11,7 @@ ROS catkin, C++14/17. SuperPoint detection requires LibTorch.
 ### Two catkin packages
 
 - **`polarfp_camera_models`** — Camera model library (pinhole/fisheye/Scaramuzza) and calibration tools.(Same as in VINS-Fusion)
-- **`vins_estimator`** — Main package. Builds `vins_lib` library + `polarfp_vins_node` executable.
+- **`polarfp_vins_estimator`** — Main package. Builds `vins_lib` library + `polarfp_vins_node` executable.
 
 ### vins_estimator modules
 

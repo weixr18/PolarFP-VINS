@@ -31,7 +31,7 @@ createDetector() ─────────────────────
 
 ## Step 1: 新建文件
 
-### 1.1 `vins_estimator/src/featureTracker/superpoint_detector.h`
+### 1.1 `polarfp_vins_estimator/src/featureTracker/superpoint_detector.h`
 
 PIMPL 模式，**一个类**同时完成 LibTorch 封装和 `FeatureDetector` 适配。`SuperPointKeypoint` struct 不暴露，放在 `.cpp` 内部。
 
@@ -77,7 +77,7 @@ private:
 };
 ```
 
-### 1.2 `vins_estimator/src/featureTracker/superpoint_detector.cpp`
+### 1.2 `polarfp_vins_estimator/src/featureTracker/superpoint_detector.cpp`
 
 从旧分支 `superpoint_detector.cpp` 移植核心推理代码，合并到一个类中。
 
@@ -227,7 +227,7 @@ for (auto& ch : channels) {
 
 ## Step 3: 修改现有文件
 
-### 3.1 `vins_estimator/src/featureTracker/feature_tracker_detector.h`
+### 3.1 `polarfp_vins_estimator/src/featureTracker/feature_tracker_detector.h`
 
 ```cpp
 enum class DetectorType { GFTT, FAST, SUPERPOINT };
@@ -242,12 +242,12 @@ struct DetectorConfig {
 };
 ```
 
-### 3.2 `vins_estimator/src/featureTracker/feature_tracker_detector.cpp`
+### 3.2 `polarfp_vins_estimator/src/featureTracker/feature_tracker_detector.cpp`
 
 1. `#include "superpoint_detector.h"`
 2. `createDetector()` 添加 SUPERPOINT case
 
-### 3.3 `vins_estimator/src/estimator/parameters.h`
+### 3.3 `polarfp_vins_estimator/src/estimator/parameters.h`
 
 ```cpp
 extern std::string SUPERPOINT_MODEL_PATH;
@@ -256,11 +256,11 @@ extern float SUPERPOINT_KEYPOINT_THRESHOLD;
 extern int SUPERPOINT_NMS_RADIUS;
 ```
 
-### 3.4 `vins_estimator/src/estimator/parameters.cpp`
+### 3.4 `polarfp_vins_estimator/src/estimator/parameters.cpp`
 
 - 变量定义 + YAML 读取 + 相对路径解析 + 日志（同之前方案）
 
-### 3.5 `vins_estimator/src/featureTracker/feature_tracker.cpp` — `initDetectorAndMatcher()`
+### 3.5 `polarfp_vins_estimator/src/featureTracker/feature_tracker.cpp` — `initDetectorAndMatcher()`
 
 添加 SuperPoint 配置分支（同之前方案）。
 
@@ -277,10 +277,10 @@ extern int SUPERPOINT_NMS_RADIUS;
 从 `feat/superpoint` 复制：
 | 文件 | 必需? |
 |------|-------|
-| `vins_estimator/nn/superpoint_v1.pt` | 必需 |
-| `vins_estimator/nn/superpoint_v1.pth` | 可选 |
-| `vins_estimator/nn/convert_to_torchscript.py` | 可选 |
-| `vins_estimator/src/featureTracker/test_superpoint.cpp` | 可选 |
+| `polarfp_vins_estimator/nn/superpoint_v1.pt` | 必需 |
+| `polarfp_vins_estimator/nn/superpoint_v1.pth` | 可选 |
+| `polarfp_vins_estimator/nn/convert_to_torchscript.py` | 可选 |
+| `polarfp_vins_estimator/src/featureTracker/test_superpoint.cpp` | 可选 |
 
 **不需要** `nanoflann.hpp`（属于旧 tracker 的 KD-tree 匹配）。
 
@@ -338,15 +338,15 @@ feature_matcher_type: 0
 ### 新建文件（2 个）
 | 文件 | 说明 |
 |------|------|
-| `vins_estimator/src/featureTracker/superpoint_detector.h` | PIMPL + FeatureDetector 适配器 + batch 推理接口 |
-| `vins_estimator/src/featureTracker/superpoint_detector.cpp` | LibTorch batch 推理 + mask/max_cnt 过滤 |
+| `polarfp_vins_estimator/src/featureTracker/superpoint_detector.h` | PIMPL + FeatureDetector 适配器 + batch 推理接口 |
+| `polarfp_vins_estimator/src/featureTracker/superpoint_detector.cpp` | LibTorch batch 推理 + mask/max_cnt 过滤 |
 
 ### 修改文件（5 个）
 | 文件 | 变更 |
 |------|------|
-| `vins_estimator/src/featureTracker/feature_tracker_detector.h` | 枚举添加 SUPERPOINT，Config 添加 SP 字段 |
-| `vins_estimator/src/featureTracker/feature_tracker_detector.cpp` | 工厂函数添加 SP case，include 头文件 |
-| `vins_estimator/src/featureTracker/feature_tracker.cpp` | **trackImage 拆为两阶段循环**（2a-2d + 2e 分支 + 2f-2i），initDetectorAndMatcher 添加 SP 配置 |
-| `vins_estimator/src/estimator/parameters.h` | SuperPoint 全局变量 |
-| `vins_estimator/src/estimator/parameters.cpp` | 变量定义、YAML 读取、路径解析 |
-| `vins_estimator/CMakeLists.txt` | C++17、可选 LibTorch、条件编译链接 |
+| `polarfp_vins_estimator/src/featureTracker/feature_tracker_detector.h` | 枚举添加 SUPERPOINT，Config 添加 SP 字段 |
+| `polarfp_vins_estimator/src/featureTracker/feature_tracker_detector.cpp` | 工厂函数添加 SP case，include 头文件 |
+| `polarfp_vins_estimator/src/featureTracker/feature_tracker.cpp` | **trackImage 拆为两阶段循环**（2a-2d + 2e 分支 + 2f-2i），initDetectorAndMatcher 添加 SP 配置 |
+| `polarfp_vins_estimator/src/estimator/parameters.h` | SuperPoint 全局变量 |
+| `polarfp_vins_estimator/src/estimator/parameters.cpp` | 变量定义、YAML 读取、路径解析 |
+| `polarfp_vins_estimator/CMakeLists.txt` | C++17、可选 LibTorch、条件编译链接 |
