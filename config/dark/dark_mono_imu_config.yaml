@@ -8,13 +8,14 @@ imu: 1
 num_of_cam: 1
 polar_channels: "s0, dop, aopsin, aopcos"
 polar_hash_grid_size: 5   # 全局特征池空间哈希网格大小(px)，默认5
+random_seed: 42
 
 # topic and paths
 imu_topic: "/ahrs_driver_node/imu_data"
 image0_topic: "/arena_cam_qc1/image_raw"
 image1_topic: "/arena_cam_qc2/image_raw"
 output_path: "/home/dhz/SLAM/output/PolarFP-VINS"
-output_name: "dark_2026-04-16-14-15-03_MI_all"
+output_name: "dark_2026-04-16-14-09-36_MI_all"
 
 ###################################################
 # 1.1 Frontend - filter params

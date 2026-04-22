@@ -48,428 +48,9 @@ FeatureTracker::FeatureTracker()
 }
 
 // =============================================
-// 检测器/匹配器初始化
+// 核心函数实现
 // =============================================
 
-/** @brief 根据全局配置（FEATURE_DETECTOR_TYPE/FEATURE_MATCHER_TYPE）创建检测器和匹配器 */
-void FeatureTracker::initDetectorAndMatcher()
-{
-    DetectorConfig det_cfg;
-    if (FEATURE_DETECTOR_TYPE == 1) {
-        det_cfg.type = DetectorType::FAST;
-        det_cfg.fast_threshold = FAST_THRESHOLD;
-        det_cfg.fast_nonmax = FAST_NONMAX_SUPPRESSION;
-    } else if (FEATURE_DETECTOR_TYPE == 2) {
-        det_cfg.type = DetectorType::SUPERPOINT;
-        det_cfg.sp_model_path = SUPERPOINT_MODEL_PATH;
-        det_cfg.sp_use_gpu = (SUPERPOINT_USE_GPU != 0);
-        det_cfg.sp_keypoint_threshold = SUPERPOINT_KEYPOINT_THRESHOLD;
-        det_cfg.sp_nms_radius = SUPERPOINT_NMS_RADIUS;
-    } else {
-        det_cfg.type = DetectorType::GFTT;
-        det_cfg.gftt_quality = 0.01;
-        det_cfg.min_dist = MIN_DIST;
-    }
-    detector_ = createDetector(det_cfg);
-    ROS_INFO("[PolarFP] Detector: %s", detector_->name().c_str());
-
-    MatcherConfig match_cfg;
-    if (FEATURE_MATCHER_TYPE == 1) {
-        match_cfg.type = MatcherType::BRIEF_FLANN;
-        match_cfg.brief_bytes = BRIEF_DESCRIPTOR_BYTES;
-        match_cfg.flann_lsh_tables = FLANN_LSH_TABLES;
-        match_cfg.flann_lsh_key_size = FLANN_LSH_KEY_SIZE;
-        match_cfg.flann_multi_probe = FLANN_MULTI_PROBE;
-        match_cfg.brief_match_dist_ratio = BRIEF_MATCH_DIST_RATIO;
-    } else {
-        match_cfg.type = MatcherType::LK_FLOW;
-        match_cfg.lk_win_size = 21;
-        match_cfg.lk_max_level = 3;
-        match_cfg.flow_back = (FLOW_BACK != 0);
-        match_cfg.back_dist_thresh = 0.5;
-    }
-    matcher_ = createMatcher(match_cfg);
-    ROS_INFO("[PolarFP] Matcher: %s", matcher_->name().c_str());
-}
-
-// =============================================
-// GlobalFeaturePool 实现
-// =============================================
-
-/**
- * @brief 开始新帧：清空当前全局特征和空间哈希网格
- */
-void GlobalFeaturePool::beginFrame()
-{
-    cur_globals.clear();
-    grid.clear();
-}
-
-/**
- * @brief 传播上一帧已跟踪特征到当前帧：根据prev_bindings在各通道中查找对应局部ID，
- *        将匹配的观测写入cur_globals并注册到空间哈希网格
- * @param channels 当前帧各通道状态
- */
-void GlobalFeaturePool::propagateTracked(const std::vector<ChannelState>& channels)
-{
-    for (const auto& [global_id, channel_map] : prev_bindings) {
-        for (const auto& [ch_name, prev_local_id] : channel_map) {
-            const ChannelState* ch_ptr = nullptr;
-            for (const auto& ch : channels) {
-                if (ch.name == ch_name) {
-                    ch_ptr = &ch;
-                    break;
-                }
-            }
-            if (!ch_ptr) continue;
-
-            const auto& ch = *ch_ptr;
-            auto it = std::find(ch.local_ids.begin(), ch.local_ids.end(), prev_local_id);
-            if (it != ch.local_ids.end()) {
-                size_t idx = std::distance(ch.local_ids.begin(), it);
-                cur_globals[global_id].global_id = global_id;
-                cur_globals[global_id].local_ids[ch_name] = prev_local_id;
-                cur_globals[global_id].pixel_pts[ch_name] = ch.cur_pts[idx];
-                insertToGrid(global_id, ch.cur_pts[idx]);
-            }
-        }
-    }
-}
-
-/**
- * @brief 注册未绑定的新特征到全局池：遍历各通道局部特征，尝试将其关联到
- *        空间邻近的已有全局特征（距离阈值内），若无则分配新的全局ID
- * @param channels 各通道状态（可修改，用于遍历局部特征）
- * @param min_dist 空间去重最小距离（像素）
- */
-void GlobalFeaturePool::registerUnboundFeatures(std::vector<ChannelState>& channels, int min_dist)
-{
-    for (auto& ch : channels) {
-        for (size_t i = 0; i < ch.local_ids.size(); ++i) {
-            int local_id = ch.local_ids[i];
-            bool already_bound = false;
-            for (const auto& [gid, gf] : cur_globals) {
-                auto it = gf.local_ids.find(ch.name);
-                if (it != gf.local_ids.end() && it->second == local_id) {
-                    already_bound = true;
-                    break;
-                }
-            }
-            if (already_bound) continue;
-
-            cv::Point2f pt = ch.cur_pts[i];
-            auto candidates = queryNearby(pt);
-
-            bool attached = false;
-            for (int gid : candidates) {
-                auto& gf = cur_globals[gid];
-                if (gf.local_ids.count(ch.name)) continue;
-                if (gf.pixel_pts.empty()) continue;
-
-                double min_d = std::numeric_limits<double>::max();
-                for (const auto& [_, other_pt] : gf.pixel_pts) {
-                    double dx = pt.x - other_pt.x;
-                    double dy = pt.y - other_pt.y;
-                    min_d = std::min(min_d, dx*dx + dy*dy);
-                }
-                if (min_d <= (min_dist / 2.0) * (min_dist / 2.0)) {
-                    gf.local_ids[ch.name] = local_id;
-                    gf.pixel_pts[ch.name] = pt;
-                    insertToGrid(gid, pt);
-                    attached = true;
-                    break;
-                }
-            }
-
-            if (!attached) {
-                int new_gid = next_global_id++;
-                GlobalFeature gf;
-                gf.global_id = new_gid;
-                gf.local_ids[ch.name] = local_id;
-                gf.pixel_pts[ch.name] = pt;
-                cur_globals[new_gid] = std::move(gf);
-                insertToGrid(new_gid, pt);
-            }
-        }
-    }
-}
-
-/**
- * @brief 构建当前帧特征输出：对每个全局特征选择一个代表性通道（首个绑定的通道），
- *        提取其归一化坐标、像素坐标和速度，组装为后端所需的7维观测向量
- * @param channels 各通道状态
- * @return featureFrame: global_id -> [(cam_id, [x,y,z,u,v,vx,vy])]
- */
-std::map<int, std::vector<std::pair<int, Eigen::Matrix<double, 7, 1>>>>
-GlobalFeaturePool::buildFeatureFrame(const std::vector<ChannelState>& channels) const
-{
-    std::map<int, std::vector<std::pair<int, Eigen::Matrix<double, 7, 1>>>> featureFrame;
-
-    std::map<std::string, const ChannelState*> ch_map;
-    for (const auto& ch : channels) ch_map[ch.name] = &ch;
-
-    for (const auto& [gid, gf] : cur_globals) {
-        const ChannelState* selected_ch = nullptr;
-        int selected_local_id = -1;
-        size_t selected_idx = 0;
-
-        for (const auto& ch : channels) {
-            auto it = gf.local_ids.find(ch.name);
-            if (it != gf.local_ids.end()) {
-                selected_local_id = it->second;
-                auto ch_it = ch_map.find(ch.name);
-                if (ch_it == ch_map.end()) continue;
-                selected_ch = ch_it->second;
-                for (size_t i = 0; i < selected_ch->local_ids.size(); ++i) {
-                    if (selected_ch->local_ids[i] == selected_local_id) {
-                        selected_idx = i;
-                        break;
-                    }
-                }
-                break;
-            }
-        }
-
-        if (!selected_ch) continue;
-
-        const auto& ch = *selected_ch;
-        double x = ch.cur_un_pts[selected_idx].x;
-        double y = ch.cur_un_pts[selected_idx].y;
-        double z = 1;
-        double p_u = ch.cur_pts[selected_idx].x;
-        double p_v = ch.cur_pts[selected_idx].y;
-        double velocity_x = ch.pts_velocity[selected_idx].x;
-        double velocity_y = ch.pts_velocity[selected_idx].y;
-
-        Eigen::Matrix<double, 7, 1> xyz_uv_velocity;
-        xyz_uv_velocity << x, y, z, p_u, p_v, velocity_x, velocity_y;
-        featureFrame[gid].emplace_back(0, xyz_uv_velocity);
-    }
-    return featureFrame;
-}
-
-/**
- * @brief 获取当前帧全局ID到各通道局部ID的映射关系，供后端外点剔除使用
- * @return global_id -> [(channel_name, local_id)]
- */
-std::map<int, std::vector<std::pair<std::string, int>>>
-GlobalFeaturePool::getGlobalToLocalMap() const
-{
-    std::map<int, std::vector<std::pair<std::string, int>>> result;
-    for (const auto& [gid, gf] : cur_globals) {
-        for (const auto& [ch_name, local_id] : gf.local_ids) {
-            result[gid].emplace_back(ch_name, local_id);
-        }
-    }
-    return result;
-}
-
-/**
- * @brief 结束当前帧：将cur_globals中仍有绑定的全局特征保存为下一帧的prev状态
- */
-void GlobalFeaturePool::endFrame()
-{
-    prev_bindings.clear();
-    prev_pts.clear();
-    for (const auto& [gid, gf] : cur_globals) {
-        if (!gf.local_ids.empty()) {
-            prev_bindings[gid] = gf.local_ids;
-            prev_pts[gid] = gf.pixel_pts;
-        }
-    }
-}
-
-/**
- * @brief 计算点所在网格单元格索引，用于空间哈希定位
- * @param pt 像素坐标点
- * @return (cell_x, cell_y) 网格单元格坐标
- */
-std::pair<int, int> GlobalFeaturePool::getGridCell(const cv::Point2f& pt) const
-{
-    return {static_cast<int>(pt.x) / grid_size_, static_cast<int>(pt.y) / grid_size_};
-}
-
-/**
- * @brief 将全局特征插入空间哈希网格：根据像素坐标计算单元格并追加ID
- * @param global_id 全局特征ID
- * @param pt 像素坐标点
- */
-void GlobalFeaturePool::insertToGrid(int global_id, const cv::Point2f& pt)
-{
-    auto cell = getGridCell(pt);
-    grid[cell].push_back(global_id);
-}
-
-/**
- * @brief 查询点邻近的全局特征：检索当前单元格及8邻域内的所有全局ID
- * @param pt 像素坐标点
- * @return 邻近全局ID列表（可能包含重复）
- */
-std::vector<int> GlobalFeaturePool::queryNearby(const cv::Point2f& pt) const
-{
-    std::vector<int> result;
-    auto [cx, cy] = getGridCell(pt);
-    for (int dx = -1; dx <= 1; ++dx) {
-        for (int dy = -1; dy <= 1; ++dy) {
-            auto it = grid.find({cx + dx, cy + dy});
-            if (it != grid.end()) {
-                result.insert(result.end(), it->second.begin(), it->second.end());
-            }
-        }
-    }
-    return result;
-}
-
-// =============================================
-// 辅助函数实现
-// =============================================
-
-/** @brief 设置启用的偏振通道列表 */
-void FeatureTracker::setPolarChannels(const vector<string>& channel_names)
-{
-    channels.clear();
-    for (const auto& name : channel_names) {
-        channels.emplace_back(name);
-    }
-    ROS_INFO("[PolarFP] setPolarChannels: %zu channels", channels.size());
-}
-
-/** @brief 设置偏振通道滤波配置并打印参数信息 */
-void FeatureTracker::setPolarFilterConfig(const PolarFilterConfig& cfg)
-{
-    polar_filter_cfg = cfg;
-    if (cfg.filter_type == FILTER_BILATERAL) {
-        ROS_INFO("[PolarFP] Bilateral filter: d=%d sigmaColor=%.1f sigmaSpace=%.1f",
-                 cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
-    } else if (cfg.filter_type == FILTER_GUIDED) {
-        ROS_INFO("[PolarFP] Guided filter: radius=%d eps=%.4f",
-                 cfg.guided_radius, cfg.guided_eps);
-    } else if (cfg.filter_type == FILTER_MEDIAN) {
-        ROS_INFO("[PolarFP] Median filter: kernel_size=%d",
-                 cfg.median_kernel_size);
-    }
-}
-
-/** @brief 从PolarChannelResult中提取指定通道（s0/dop/aopsin/aopcos）的8bit图像 */
-cv::Mat FeatureTracker::getChannelImage(const PolarChannelResult& result, const string& channel)
-{
-    if (channel == "s0")      return result.S0_img.clone();
-    if (channel == "dop")     return result.dop_img.clone();
-    if (channel == "aopsin")  return result.sin_img.clone();
-    if (channel == "aopcos")  return result.cos_img.clone();
-    ROS_WARN("[PolarFP] unknown channel: %s", channel.c_str());
-    return cv::Mat();
-}
-
-/** @brief 边界检查：判断点是否在通道图像内部（留1像素边距） */
-bool FeatureTracker::inBorderImpl(const ChannelState& ch, const cv::Point2f& pt)
-{
-    const int BORDER_SIZE = 1;
-    int img_x = cvRound(pt.x);
-    int img_y = cvRound(pt.y);
-    return BORDER_SIZE <= img_x && img_x < ch.col - BORDER_SIZE &&
-           BORDER_SIZE <= img_y && img_y < ch.row - BORDER_SIZE;
-}
-
-/** @brief 对单通道特征点施加mask：按跟踪帧数降序选取，保证空间均匀分布 */
-void FeatureTracker::setMaskForChannel(ChannelState& ch)
-{
-    ch.mask = cv::Mat(ch.row, ch.col, CV_8UC1, cv::Scalar(255));
-
-    vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
-    for (unsigned int i = 0; i < ch.cur_pts.size(); i++)
-        cnt_pts_id.push_back(make_pair(ch.track_cnt[i], make_pair(ch.cur_pts[i], ch.local_ids[i])));
-
-    sort(cnt_pts_id.begin(), cnt_pts_id.end(),
-         [](const pair<int, pair<cv::Point2f, int>> &a, const pair<int, pair<cv::Point2f, int>> &b) {
-             return a.first > b.first;
-         });
-
-    ch.cur_pts.clear();
-    ch.local_ids.clear();
-    ch.track_cnt.clear();
-
-    for (auto &it : cnt_pts_id)
-    {
-        if (ch.mask.at<uchar>(it.second.first) == 255)
-        {
-            ch.cur_pts.push_back(it.second.first);
-            ch.local_ids.push_back(it.second.second);
-            ch.track_cnt.push_back(it.first);
-            cv::circle(ch.mask, it.second.first, MIN_DIST, 0, -1);
-        }
-    }
-}
-
-/** @brief 多通道跟踪可视化：单通道直接绘制，多通道按2x2网格拼接，颜色随跟踪帧数变化 */
-void FeatureTracker::drawTrackPolar()
-{
-    if (channels.empty()) return;
-
-    // Per-channel HSV: {H(0-179), S, V}
-    // H from original channel color; S varies with track_cnt; V=255
-    static const vector<cv::Vec3b> channelHSV = {
-        { 30, 255, 255 },  // yellow - s0
-        { 60, 255, 255 },  // green  - dop
-        {  0, 255, 255 },  // red    - aopsin
-        { 120, 255, 255 }, // blue   - aopcos
-    };
-
-    auto getColorByTrackCnt = [](int hue, int trackCnt) -> cv::Scalar {
-        int sat = std::min(255, trackCnt * 255 / 20);
-        cv::Mat hsv(1, 1, CV_8UC3, cv::Vec3b((uchar)hue, (uchar)sat, 255));
-        cv::Mat bgr;
-        cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
-        cv::Vec3b bgrVal = bgr.at<cv::Vec3b>(0, 0);
-        return cv::Scalar(bgrVal[0], bgrVal[1], bgrVal[2]);
-    };
-
-    if (channels.size() == 1) {
-        // 单通道:直接在该图像上绘制
-        const auto& ch = channels[0];
-        if (ch.cur_img.empty()) return;
-        cv::cvtColor(ch.cur_img, imTrack, cv::COLOR_GRAY2BGR);
-        for (size_t j = 0; j < ch.cur_pts.size(); j++) {
-            cv::Scalar color = getColorByTrackCnt(channelHSV[0][0], ch.track_cnt[j]);
-            cv::circle(imTrack, ch.cur_pts[j], 2, color, 2);
-        }
-    } else {
-        // 多通道:2x2 网格拼接
-        int h = channels[0].row;
-        int w = channels[0].col;
-        imTrack = cv::Mat(h * 2, w * 2, CV_8UC3, cv::Scalar(0));
-
-        for (size_t c = 0; c < channels.size() && c < 4; c++) {
-            const auto& ch = channels[c];
-            if (ch.cur_img.empty()) continue;
-
-            int gridRow = c / 2;
-            int gridCol = c % 2;
-            cv::Mat chBGR;
-            cv::cvtColor(ch.cur_img, chBGR, cv::COLOR_GRAY2BGR);
-            cv::Mat roi = imTrack(cv::Rect(gridCol * w, gridRow * h, w, h));
-            chBGR.copyTo(roi);
-
-            // 绘制特征点(饱和度随跟踪帧数变化)
-            int hue = channelHSV[c][0];
-            for (size_t j = 0; j < ch.cur_pts.size(); j++) {
-                cv::Point2f pt(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
-                cv::Scalar color = getColorByTrackCnt(hue, ch.track_cnt[j]);
-                cv::circle(imTrack, pt, 2, color, 2);
-            }
-            // 绘制轨迹箭头(固定通道颜色)
-            for (size_t j = 0; j < ch.cur_pts.size(); j++) {
-                auto it = ch.prevLeftPtsMap.find(ch.local_ids[j]);
-                if (it != ch.prevLeftPtsMap.end()) {
-                    cv::Point2f from(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
-                    cv::Point2f to(it->second.x + gridCol * w, it->second.y + gridRow * h);
-                    cv::Scalar fullColor = getColorByTrackCnt(hue, 20);
-                    cv::arrowedLine(imTrack, from, to, fullColor, 1, 8, 0, 0.2);
-                }
-            }
-        }
-    }
-}
 
 /**
  * @brief 核心跟踪函数：偏振图像分解→每通道独立跟踪→新特征检测→全局池合并
@@ -651,6 +232,200 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
     if (!channels.empty() && !channels[0].cur_img.empty())
         cur_img = channels[0].cur_img;
     return featureFrame;
+}
+
+
+
+
+// =============================================
+// 辅助函数实现
+// =============================================
+
+/** @brief 检测器和匹配器初始化
+    根据全局配置（FEATURE_DETECTOR_TYPE/FEATURE_MATCHER_TYPE）创建 */
+void FeatureTracker::initDetectorAndMatcher()
+{
+    DetectorConfig det_cfg;
+    if (FEATURE_DETECTOR_TYPE == 1) {
+        det_cfg.type = DetectorType::FAST;
+        det_cfg.fast_threshold = FAST_THRESHOLD;
+        det_cfg.fast_nonmax = FAST_NONMAX_SUPPRESSION;
+    } else if (FEATURE_DETECTOR_TYPE == 2) {
+        det_cfg.type = DetectorType::SUPERPOINT;
+        det_cfg.sp_model_path = SUPERPOINT_MODEL_PATH;
+        det_cfg.sp_use_gpu = (SUPERPOINT_USE_GPU != 0);
+        det_cfg.sp_keypoint_threshold = SUPERPOINT_KEYPOINT_THRESHOLD;
+        det_cfg.sp_nms_radius = SUPERPOINT_NMS_RADIUS;
+    } else {
+        det_cfg.type = DetectorType::GFTT;
+        det_cfg.gftt_quality = 0.01;
+        det_cfg.min_dist = MIN_DIST;
+    }
+    detector_ = createDetector(det_cfg);
+    ROS_INFO("[PolarFP] Detector: %s", detector_->name().c_str());
+
+    MatcherConfig match_cfg;
+    if (FEATURE_MATCHER_TYPE == 1) {
+        match_cfg.type = MatcherType::BRIEF_FLANN;
+        match_cfg.brief_bytes = BRIEF_DESCRIPTOR_BYTES;
+        match_cfg.brief_match_dist_ratio = BRIEF_MATCH_DIST_RATIO;
+    } else {
+        match_cfg.type = MatcherType::LK_FLOW;
+        match_cfg.lk_win_size = 21;
+        match_cfg.lk_max_level = 3;
+        match_cfg.flow_back = (FLOW_BACK != 0);
+        match_cfg.back_dist_thresh = 0.5;
+    }
+    matcher_ = createMatcher(match_cfg);
+    ROS_INFO("[PolarFP] Matcher: %s", matcher_->name().c_str());
+}
+
+
+/** @brief 设置启用的偏振通道列表 */
+void FeatureTracker::setPolarChannels(const vector<string>& channel_names)
+{
+    channels.clear();
+    for (const auto& name : channel_names) {
+        channels.emplace_back(name);
+    }
+    ROS_INFO("[PolarFP] setPolarChannels: %zu channels", channels.size());
+}
+
+/** @brief 设置偏振通道滤波配置并打印参数信息 */
+void FeatureTracker::setPolarFilterConfig(const PolarFilterConfig& cfg)
+{
+    polar_filter_cfg = cfg;
+    if (cfg.filter_type == FILTER_BILATERAL) {
+        ROS_INFO("[PolarFP] Bilateral filter: d=%d sigmaColor=%.1f sigmaSpace=%.1f",
+                 cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
+    } else if (cfg.filter_type == FILTER_GUIDED) {
+        ROS_INFO("[PolarFP] Guided filter: radius=%d eps=%.4f",
+                 cfg.guided_radius, cfg.guided_eps);
+    } else if (cfg.filter_type == FILTER_MEDIAN) {
+        ROS_INFO("[PolarFP] Median filter: kernel_size=%d",
+                 cfg.median_kernel_size);
+    }
+}
+
+/** @brief 从PolarChannelResult中提取指定通道（s0/dop/aopsin/aopcos）的8bit图像 */
+cv::Mat FeatureTracker::getChannelImage(const PolarChannelResult& result, const string& channel)
+{
+    if (channel == "s0")      return result.S0_img.clone();
+    if (channel == "dop")     return result.dop_img.clone();
+    if (channel == "aopsin")  return result.sin_img.clone();
+    if (channel == "aopcos")  return result.cos_img.clone();
+    ROS_WARN("[PolarFP] unknown channel: %s", channel.c_str());
+    return cv::Mat();
+}
+
+/** @brief 边界检查：判断点是否在通道图像内部（留1像素边距） */
+bool FeatureTracker::inBorderImpl(const ChannelState& ch, const cv::Point2f& pt)
+{
+    const int BORDER_SIZE = 1;
+    int img_x = cvRound(pt.x);
+    int img_y = cvRound(pt.y);
+    return BORDER_SIZE <= img_x && img_x < ch.col - BORDER_SIZE &&
+           BORDER_SIZE <= img_y && img_y < ch.row - BORDER_SIZE;
+}
+
+/** @brief 对单通道特征点施加mask：按跟踪帧数降序选取，保证空间均匀分布 */
+void FeatureTracker::setMaskForChannel(ChannelState& ch)
+{
+    ch.mask = cv::Mat(ch.row, ch.col, CV_8UC1, cv::Scalar(255));
+
+    vector<pair<int, pair<cv::Point2f, int>>> cnt_pts_id;
+    for (unsigned int i = 0; i < ch.cur_pts.size(); i++)
+        cnt_pts_id.push_back(make_pair(ch.track_cnt[i], make_pair(ch.cur_pts[i], ch.local_ids[i])));
+
+    sort(cnt_pts_id.begin(), cnt_pts_id.end(),
+         [](const pair<int, pair<cv::Point2f, int>> &a, const pair<int, pair<cv::Point2f, int>> &b) {
+             return a.first > b.first;
+         });
+
+    ch.cur_pts.clear();
+    ch.local_ids.clear();
+    ch.track_cnt.clear();
+
+    for (auto &it : cnt_pts_id)
+    {
+        if (ch.mask.at<uchar>(it.second.first) == 255)
+        {
+            ch.cur_pts.push_back(it.second.first);
+            ch.local_ids.push_back(it.second.second);
+            ch.track_cnt.push_back(it.first);
+            cv::circle(ch.mask, it.second.first, MIN_DIST, 0, -1);
+        }
+    }
+}
+
+/** @brief 多通道跟踪可视化：单通道直接绘制，多通道按2x2网格拼接，颜色随跟踪帧数变化 */
+void FeatureTracker::drawTrackPolar()
+{
+    if (channels.empty()) return;
+
+    // Per-channel HSV: {H(0-179), S, V}
+    // H from original channel color; S varies with track_cnt; V=255
+    static const vector<cv::Vec3b> channelHSV = {
+        { 30, 255, 255 },  // yellow - s0
+        { 60, 255, 255 },  // green  - dop
+        {  0, 255, 255 },  // red    - aopsin
+        { 120, 255, 255 }, // blue   - aopcos
+    };
+
+    auto getColorByTrackCnt = [](int hue, int trackCnt) -> cv::Scalar {
+        int sat = std::min(255, trackCnt * 255 / 20);
+        cv::Mat hsv(1, 1, CV_8UC3, cv::Vec3b((uchar)hue, (uchar)sat, 255));
+        cv::Mat bgr;
+        cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
+        cv::Vec3b bgrVal = bgr.at<cv::Vec3b>(0, 0);
+        return cv::Scalar(bgrVal[0], bgrVal[1], bgrVal[2]);
+    };
+
+    if (channels.size() == 1) {
+        // 单通道:直接在该图像上绘制
+        const auto& ch = channels[0];
+        if (ch.cur_img.empty()) return;
+        cv::cvtColor(ch.cur_img, imTrack, cv::COLOR_GRAY2BGR);
+        for (size_t j = 0; j < ch.cur_pts.size(); j++) {
+            cv::Scalar color = getColorByTrackCnt(channelHSV[0][0], ch.track_cnt[j]);
+            cv::circle(imTrack, ch.cur_pts[j], 2, color, 2);
+        }
+    } else {
+        // 多通道:2x2 网格拼接
+        int h = channels[0].row;
+        int w = channels[0].col;
+        imTrack = cv::Mat(h * 2, w * 2, CV_8UC3, cv::Scalar(0));
+
+        for (size_t c = 0; c < channels.size() && c < 4; c++) {
+            const auto& ch = channels[c];
+            if (ch.cur_img.empty()) continue;
+
+            int gridRow = c / 2;
+            int gridCol = c % 2;
+            cv::Mat chBGR;
+            cv::cvtColor(ch.cur_img, chBGR, cv::COLOR_GRAY2BGR);
+            cv::Mat roi = imTrack(cv::Rect(gridCol * w, gridRow * h, w, h));
+            chBGR.copyTo(roi);
+
+            // 绘制特征点(饱和度随跟踪帧数变化)
+            int hue = channelHSV[c][0];
+            for (size_t j = 0; j < ch.cur_pts.size(); j++) {
+                cv::Point2f pt(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
+                cv::Scalar color = getColorByTrackCnt(hue, ch.track_cnt[j]);
+                cv::circle(imTrack, pt, 2, color, 2);
+            }
+            // 绘制轨迹箭头(固定通道颜色)
+            for (size_t j = 0; j < ch.cur_pts.size(); j++) {
+                auto it = ch.prevLeftPtsMap.find(ch.local_ids[j]);
+                if (it != ch.prevLeftPtsMap.end()) {
+                    cv::Point2f from(ch.cur_pts[j].x + gridCol * w, ch.cur_pts[j].y + gridRow * h);
+                    cv::Point2f to(it->second.x + gridCol * w, it->second.y + gridRow * h);
+                    cv::Scalar fullColor = getColorByTrackCnt(hue, 20);
+                    cv::arrowedLine(imTrack, from, to, fullColor, 1, 8, 0, 0.2);
+                }
+            }
+        }
+    }
 }
 
 /**

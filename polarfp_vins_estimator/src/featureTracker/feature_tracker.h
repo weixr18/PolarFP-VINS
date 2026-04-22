@@ -67,9 +67,9 @@ struct ChannelState {
     vector<int> local_ids;                      ///< 【局部 ID】仅在当前通道内唯一，由 next_local_id 分配
     vector<int> track_cnt;                      ///< 跟踪帧数
     vector<cv::Point2f> pts_velocity;           ///< 像素速度
-    map<int, cv::Point2f> cur_un_pts_map;       ///< local_id → 归一化坐标
-    map<int, cv::Point2f> prev_un_pts_map;      ///< 上一帧 local_id → 归一化坐标
-    map<int, cv::Point2f> prevLeftPtsMap;       ///< 上一帧 local_id → 像素坐标
+    map<int, cv::Point2f> cur_un_pts_map;       ///< local_id -> 归一化坐标
+    map<int, cv::Point2f> prev_un_pts_map;      ///< 上一帧 local_id -> 归一化坐标
+    map<int, cv::Point2f> prevLeftPtsMap;       ///< 上一帧 local_id -> 像素坐标
     double cur_time = 0;                        ///< 当前帧时间戳
     double prev_time = 0;                       ///< 上一帧时间戳
     cv::Mat mask;                               ///< 空间分布掩码
@@ -96,8 +96,8 @@ struct ChannelState {
 struct GlobalFeaturePool {
     struct GlobalFeature {
         int global_id;
-        std::map<std::string, int> local_ids;          ///< 通道名 -> local_id
-        std::map<std::string, cv::Point2f> pixel_pts;  ///< 通道名 -> 像素坐标
+        std::map<std::string, int> local_ids;          ///< channel name -> local_id
+        std::map<std::string, cv::Point2f> pixel_pts;  ///< channel name -> pixel coordinate
     };
 
     int next_global_id = 0;
@@ -105,10 +105,10 @@ struct GlobalFeaturePool {
     std::map<int, std::map<std::string, int>> prev_bindings;    ///< global_id -> {ch_name -> local_id}
     std::map<int, std::map<std::string, cv::Point2f>> prev_pts; ///< global_id -> {ch_name -> pixel_pt}
 
-    std::map<int, GlobalFeature> cur_globals;                   ///< 当前帧活跃的全局特征
-    std::map<std::pair<int, int>, std::vector<int>> grid;       ///< 空间哈希 (cell_x, cell_y) -> [global_id]
+    std::map<int, GlobalFeature> cur_globals;                   ///< current frame active global features
+    std::map<std::pair<int, int>, std::vector<int>> grid;       ///< spatial hash (cell_x, cell_y) -> [global_id]
 
-    int grid_size_ = 5;   ///< 哈希网格边长（像素），由 YAML polar_hash_grid_size 注入
+    int grid_size_ = 5;   ///< hash grid cell size in pixels, injected from YAML polar_hash_grid_size
 
     void beginFrame();
     void propagateTracked(const std::vector<ChannelState>& channels);

@@ -45,7 +45,6 @@ cv::Mat _raw_chnl_to_gray(const std::vector<cv::Mat>& img_xx);
  * 所有输出图像尺寸均为输入的一半（宽高各 /2）。
  */
 struct PolarChannelResult {
-    cv::Mat S0_color;  ///< (h/2, w/2, 3) RGB 彩色 S0 图，用于可视化
     cv::Mat S0_img;    ///< (h/2, w/2) 灰度 S0 强度图，等效灰度图
     cv::Mat aop_vis;   ///< (h/2, w/2, 3) AoP 的 HSV 彩色可视化
     cv::Mat dop_img;   ///< (h/2, w/2) 量化后的 DoP 图 [0, 255]

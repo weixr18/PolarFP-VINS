@@ -100,20 +100,13 @@ MatchResult LKFlowMatcher::track(
 // ============================================================
 
 /**
- * @brief BRIEF+FLANN匹配器构造函数：初始化BRIEF描述子提取器（或ORB回退）
+ * @brief BRIEF+BF匹配器构造函数：初始化BRIEF描述子提取器（或ORB回退）
  * @param brief_bytes 描述子字节数
- * @param flann_lsh_tables FLANN LSH哈希表数量
- * @param flann_lsh_key_size 哈希键大小
- * @param flann_multi_probe 多探测层级
  * @param match_dist_ratio 匹配距离比率阈值（Lowe's ratio test）
  */
 BRIEFFLANNMatcher::BRIEFFLANNMatcher(
-    int brief_bytes, int flann_lsh_tables,
-    int flann_lsh_key_size, int flann_multi_probe,
-    float match_dist_ratio)
-    : brief_bytes_(brief_bytes), flann_lsh_tables_(flann_lsh_tables),
-      flann_lsh_key_size_(flann_lsh_key_size),
-      flann_multi_probe_(flann_multi_probe),
+    int brief_bytes, float match_dist_ratio)
+    : brief_bytes_(brief_bytes),
       match_dist_ratio_(match_dist_ratio)
 {
 #ifdef HAVE_OPENCV_XFEATURES2D
@@ -127,8 +120,8 @@ BRIEFFLANNMatcher::BRIEFFLANNMatcher(
 }
 
 /**
- * @brief BRIEF+FLANN匹配器跟踪实现：检测当前帧关键点，提取描述子，
- *        构建FLANN-LSH索引后用Hamming距离 + ratio test进行匹配
+ * @brief BRIEF+BF匹配器跟踪实现：检测当前帧关键点，提取描述子，
+ *        使用BFMatcher进行确定性kNN匹配（Hamming距离 + ratio test）
  * @param prev_img 上一帧图像（未使用）
  * @param cur_img 当前帧图像
  * @param prev_pts 上一帧特征点
@@ -165,40 +158,30 @@ MatchResult BRIEFFLANNMatcher::track(
     if (cur_desc_mat.empty())
         return result;
 
-    // 3. Build FLANN LSH index from current descriptors
-    // FLANN LSH params: table_number, key_size, multi_probe_level
-    cv::flann::Index flann_index(
-        cur_desc_mat,
-        cv::flann::LshIndexParams(flann_lsh_tables_,
-                                   flann_lsh_key_size_,
-                                   flann_multi_probe_),
-        cvflann::FLANN_DIST_HAMMING);
-
-    // 4. Build query matrix from previous descriptors
+    // 3. Build query matrix from previous descriptors
     cv::Mat query_desc(n_prev, brief_bytes_, CV_8UC1, const_cast<uchar*>(prev_desc.data()));
 
-    // 5. kNN search with k=2 for ratio test
-    cv::Mat indices(n_prev, 2, CV_32SC1);
-    cv::Mat dists(n_prev, 2, CV_32FC1);
-    flann_index.knnSearch(query_desc, indices, dists, 2,
-                          cv::flann::SearchParams(32));
+    // 4. BFMatcher kNN search with k=2 for ratio test (deterministic)
+    cv::BFMatcher matcher(cv::NORM_HAMMING);
+    std::vector<std::vector<cv::DMatch>> knn_matches;
+    matcher.knnMatch(query_desc, cur_desc_mat, knn_matches, 2);
 
-    // 6. Match with ratio test
-    for (int i = 0; i < n_prev; i++) {
-        int idx1 = indices.at<int>(i, 0);
-        float d1 = dists.at<float>(i, 0);
-        float d2 = dists.at<float>(i, 1);
+    // 5. Match with ratio test
+    for (const auto& matches : knn_matches) {
+        if (matches.size() < 2) continue;
+        const auto& d1 = matches[0];
+        const auto& d2 = matches[1];
 
-        if (idx1 < 0 || idx1 >= static_cast<int>(cur_kps.size()))
+        if (d1.trainIdx < 0 || d1.trainIdx >= static_cast<int>(cur_kps.size()))
             continue;
-        if (d2 < 1e-5f) continue;  // avoid division by zero
+        if (d2.distance < 1e-5f) continue;  // avoid division by zero
 
-        float ratio = d1 / d2;
+        float ratio = d1.distance / d2.distance;
         if (ratio < match_dist_ratio_) {
-            result.prev_pts.push_back(prev_pts[i]);
-            result.cur_pts.push_back(cur_kps[idx1].pt);
-            result.ids.push_back(prev_ids[i]);
-            result.track_cnt.push_back(prev_track_cnt[i]);
+            result.prev_pts.push_back(prev_pts[d1.queryIdx]);
+            result.cur_pts.push_back(cur_kps[d1.trainIdx].pt);
+            result.ids.push_back(prev_ids[d1.queryIdx]);
+            result.track_cnt.push_back(prev_track_cnt[d1.queryIdx]);
         }
     }
 
@@ -255,8 +238,7 @@ std::shared_ptr<FeatureMatcher> createMatcher(const MatcherConfig& cfg)
                 cfg.flow_back, cfg.back_dist_thresh);
         case MatcherType::BRIEF_FLANN:
             return std::make_shared<BRIEFFLANNMatcher>(
-                cfg.brief_bytes, cfg.flann_lsh_tables,
-                cfg.flann_lsh_key_size, cfg.flann_multi_probe,
+                cfg.brief_bytes,
                 cfg.brief_match_dist_ratio);
         default:
             return std::make_shared<LKFlowMatcher>(

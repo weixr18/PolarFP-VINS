@@ -59,10 +59,8 @@ int FAST_THRESHOLD = 20;
 int FAST_NONMAX_SUPPRESSION = 1;
 int FEATURE_MATCHER_TYPE = 0;    // 0=LK_FLOW, 1=BRIEF_FLANN
 int BRIEF_DESCRIPTOR_BYTES = 32;
-int FLANN_LSH_TABLES = 20;
-int FLANN_LSH_KEY_SIZE = 20;
-int FLANN_MULTI_PROBE = 20;
 float BRIEF_MATCH_DIST_RATIO = 0.75f;
+int RANDOM_SEED = -1;
 
 // SuperPoint parameters
 std::string SUPERPOINT_MODEL_PATH;
@@ -304,14 +302,10 @@ void readParameters(std::string config_file)
         FEATURE_MATCHER_TYPE = (int)fsSettings["feature_matcher_type"];
     if (!fsSettings["brief_descriptor_bytes"].empty())
         BRIEF_DESCRIPTOR_BYTES = (int)fsSettings["brief_descriptor_bytes"];
-    if (!fsSettings["flann_lsh_tables"].empty())
-        FLANN_LSH_TABLES = (int)fsSettings["flann_lsh_tables"];
-    if (!fsSettings["flann_lsh_key_size"].empty())
-        FLANN_LSH_KEY_SIZE = (int)fsSettings["flann_lsh_key_size"];
-    if (!fsSettings["flann_multi_probe"].empty())
-        FLANN_MULTI_PROBE = (int)fsSettings["flann_multi_probe"];
     if (!fsSettings["brief_match_dist_ratio"].empty())
         BRIEF_MATCH_DIST_RATIO = (float)(double)fsSettings["brief_match_dist_ratio"];
+    if (!fsSettings["random_seed"].empty())
+        RANDOM_SEED = (int)fsSettings["random_seed"];
 
     const char* det_names[] = {"GFTT", "FAST", "SUPERPOINT"};
     const char* match_names[] = {"LK_FLOW", "BRIEF_FLANN"};

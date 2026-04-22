@@ -38,16 +38,12 @@ cv::Mat guidedFilterSingle(const cv::Mat& I, const cv::Mat& p, int r, double eps
     cv::Mat mean_p  = boxFilter2D(p, 2 * r + 1);
     cv::Mat mean_II = boxFilter2D(I.mul(I), 2 * r + 1);
     cv::Mat mean_Ip = boxFilter2D(I.mul(p), 2 * r + 1);
-
     cv::Mat cov_Ip = mean_Ip - mean_I.mul(mean_p);
     cv::Mat var_I  = mean_II - mean_I.mul(mean_I);
-
     cv::Mat a = cov_Ip / (var_I + eps);
     cv::Mat b = mean_p - a.mul(mean_I);
-
     cv::Mat mean_a = boxFilter2D(a, 2 * r + 1);
     cv::Mat mean_b = boxFilter2D(b, 2 * r + 1);
-
     return mean_a.mul(I) + mean_b;
 }
 
@@ -81,35 +77,8 @@ cv::Mat _raw_chnl_to_gray(const std::vector<cv::Mat>& img_xx) {
     return img_xx_gray;
 }
 
-/** @brief 将4个原始通道合成为RGB彩色图（R=90°, G=(45°+135°)/2, B=0°），输出放大2x */
-cv::Mat _raw_chnl_to_rgb(const std::vector<cv::Mat>& img_xx) {
-    int itp = cv::INTER_CUBIC;
-    const cv::Mat& img_xx_r = img_xx[0];
-    const cv::Mat& img_xx_g1 = img_xx[1];
-    const cv::Mat& img_xx_g2 = img_xx[2];
-    const cv::Mat& img_xx_b = img_xx[3];
-    int h_4 = img_xx_r.rows;
-    int w_4 = img_xx_r.cols;
-    int h_half = h_4 * 2;
-    int w_half = w_4 * 2;
 
-    cv::Mat r_resized, g1_resized, g2_resized, b_resized;
-    cv::resize(img_xx_r, r_resized, cv::Size(w_half, h_half), 0, 0, itp);
-    cv::resize(img_xx_g1, g1_resized, cv::Size(w_half, h_half), 0, 0, itp);
-    cv::resize(img_xx_g2, g2_resized, cv::Size(w_half, h_half), 0, 0, itp);
-    cv::resize(img_xx_b, b_resized, cv::Size(w_half, h_half), 0, 0, itp);
 
-    // 合并通道为 RGB: R, G=(G1+G2)/2, B
-    std::vector<cv::Mat> channels;
-    channels.push_back(r_resized);  // R
-    cv::Mat g_combined = (g1_resized + g2_resized) / 2;  // G
-    channels.push_back(g_combined);  // G
-    channels.push_back(b_resized);   // B
-
-    cv::Mat rgb;
-    cv::merge(channels, rgb);
-    return rgb;
-}
 
 
 /** @brief 核心函数：从2x2微偏振阵列原始图像解码Stokes参数（S0/DoP/AoP）及可视化 */
@@ -119,10 +88,10 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
     int new_rows = img_raw.rows / 4;
     int new_cols = img_raw.cols / 4;
 
-    // 辅助 lambda：从超像素网格中按两对偏移量采样 4 个通道，返回灰度图和 RGB 图
+    // 辅助 lambda：从超像素网格中按两对偏移量采样 4 个通道，返回灰度图
     auto sample_polar_channels = [&](
         int row_offset1, int col_offset1, int row_offset2, int col_offset2
-    ) -> std::pair<cv::Mat, cv::Mat> {
+    ) -> cv::Mat {
         cv::Mat r_channel(new_rows, new_cols, img_raw.type());
         cv::Mat g1_channel(new_rows, new_cols, img_raw.type());
         cv::Mat g2_channel(new_rows, new_cols, img_raw.type());
@@ -136,29 +105,19 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
             }
         }
         std::vector<cv::Mat> channels = {r_channel, g1_channel, g2_channel, b_channel};
-        cv::Mat gray = _raw_chnl_to_gray(channels);
-        cv::Mat rgb = _raw_chnl_to_rgb(channels);
-        return {gray, rgb};
+        return _raw_chnl_to_gray(channels);
     };
 
     // 采样 4 个偏振角度的子图像
-    cv::Mat img_90_gray, img_90_rgb;
-    cv::Mat img_45_gray, img_45_rgb;
-    cv::Mat img_135_gray, img_135_rgb;
-    cv::Mat img_0_gray, img_0_rgb;
-    std::tie(img_90_gray, img_90_rgb) = sample_polar_channels(0, 0, 2, 2);    // 90°
-    std::tie(img_45_gray, img_45_rgb) = sample_polar_channels(0, 1, 2, 3);    // 45°
-    std::tie(img_135_gray, img_135_rgb) = sample_polar_channels(1, 0, 3, 2);  // 135°
-    std::tie(img_0_gray, img_0_rgb) = sample_polar_channels(1, 1, 3, 3);      // 0°
+    cv::Mat img_90_gray = sample_polar_channels(0, 0, 2, 2);    // 90°
+    cv::Mat img_45_gray = sample_polar_channels(0, 1, 2, 3);    // 45°
+    cv::Mat img_135_gray = sample_polar_channels(1, 0, 3, 2);  // 135°
+    cv::Mat img_0_gray = sample_polar_channels(1, 1, 3, 3);      // 0°
 
     // 计算 Stokes 向量
     cv::Mat S_0 = (img_90_gray + img_45_gray + img_135_gray + img_0_gray) / 4.0;
     cv::Mat S_1 = img_0_gray - img_90_gray;
     cv::Mat S_2 = img_45_gray - img_135_gray;
-
-    // 彩色 Stokes 向量（用于可视化）
-    cv::Mat S0_color = (img_90_rgb + img_45_rgb + img_135_rgb + img_0_rgb) / 4.0;
-    S0_color.convertTo(S0_color, CV_8U);
 
     // 计算 sin(AoP) 和 cos(AoP)，分母加 EPSILON 防止除零
     cv::Mat denominator;
@@ -255,7 +214,6 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
 
     // 组装结果
     PolarChannelResult result;
-    result.S0_color = S0_color;
     result.S0_img = S0_img;
     result.aop_vis = aop_vis;
     result.dop_img = dop_img;

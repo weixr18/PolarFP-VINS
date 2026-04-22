@@ -27,9 +27,6 @@ struct MatcherConfig {
     double back_dist_thresh = 0.5;
     // BRIEF params
     int brief_bytes = 32;
-    int flann_lsh_tables = 20;
-    int flann_lsh_key_size = 20;
-    int flann_multi_probe = 20;
     float brief_match_dist_ratio = 0.75f;
 };
 
@@ -93,16 +90,14 @@ private:
 
 /**
  * @class BRIEFFLANNMatcher
- * @brief BRIEF描述子 + FLANN LSH匹配器
+ * @brief BRIEF描述子 + BFMatcher匹配器
  *
- * 提取BRIEF（或ORB fallback）二进制描述子，使用FLANN LSH index
- * 进行快速Hamming距离匹配。
+ * 提取BRIEF（或ORB fallback）二进制描述子，使用BFMatcher
+ * 进行确定性Hamming距离kNN匹配（ratio test）。
  */
 class BRIEFFLANNMatcher : public FeatureMatcher {
 public:
-    BRIEFFLANNMatcher(int brief_bytes, int flann_lsh_tables,
-                      int flann_lsh_key_size, int flann_multi_probe,
-                      float match_dist_ratio);
+    BRIEFFLANNMatcher(int brief_bytes, float match_dist_ratio);
     std::string name() const override { return "BRIEF_FLANN"; }
     MatchResult track(
         const cv::Mat& prev_img, const cv::Mat& cur_img,
@@ -114,9 +109,6 @@ public:
         const cv::Mat& image, const std::vector<cv::Point2f>& pts) const override;
 private:
     int brief_bytes_;
-    int flann_lsh_tables_;
-    int flann_lsh_key_size_;
-    int flann_multi_probe_;
     float match_dist_ratio_;
 
     // BRIEF提取器（xfeatures2d或ORB fallback）

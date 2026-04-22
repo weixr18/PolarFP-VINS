@@ -65,6 +65,7 @@ add_library(polarfp_vins_lib
     src/featureTracker/feature_tracker.cpp
     src/featureTracker/feature_tracker_detector.cpp
     src/featureTracker/feature_tracker_matcher.cpp
+    src/featureTracker/global_feature_pool.cpp
     src/featureTracker/PolarChannel.cpp)
 
 # Conditionally add SuperPoint source

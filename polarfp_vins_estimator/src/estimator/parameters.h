@@ -78,10 +78,10 @@ extern int FAST_THRESHOLD;
 extern int FAST_NONMAX_SUPPRESSION;
 extern int FEATURE_MATCHER_TYPE;      // 0=LK_FLOW, 1=BRIEF_FLANN
 extern int BRIEF_DESCRIPTOR_BYTES;
-extern int FLANN_LSH_TABLES;
-extern int FLANN_LSH_KEY_SIZE;
-extern int FLANN_MULTI_PROBE;
 extern float BRIEF_MATCH_DIST_RATIO;
+
+// Random seed for reproducibility (-1 = use current time)
+extern int RANDOM_SEED;
 
 // SuperPoint parameters
 extern std::string SUPERPOINT_MODEL_PATH;

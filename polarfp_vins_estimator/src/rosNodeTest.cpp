@@ -186,6 +186,10 @@ void restart_callback(const std_msgs::BoolConstPtr &restart_msg)
     {
         ROS_WARN("restart the estimator!");
         estimator.clearState();
+        if (RANDOM_SEED >= 0)
+            cv::setRNGSeed(RANDOM_SEED);
+        else
+            cv::setRNGSeed(0);
         estimator.setParameter();
     }
     return;
@@ -239,6 +243,12 @@ int main(int argc, char **argv)
     printf("config_file: %s\n", argv[1]);
 
     readParameters(config_file);
+    if (RANDOM_SEED >= 0) {
+        cv::setRNGSeed(RANDOM_SEED);
+        ROS_INFO("Random seed set to %d", RANDOM_SEED);
+    } else {
+        cv::setRNGSeed(0);
+    }
     estimator.setParameter();
 
 #ifdef EIGEN_DONT_PARALLELIZE
