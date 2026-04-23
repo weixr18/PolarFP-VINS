@@ -48,11 +48,11 @@ fast_nonmax_suppression: 1
 # SuperPoint 参数 (feature_detector_type=2 时使用)
 superpoint_model_path: "/home/dhz/ws/vi_catkin_ws/src/PolarFP-VINS/polarfp_vins_estimator/nn/superpoint_v1.pt"
 superpoint_use_gpu: 1
-superpoint_keypoint_threshold: 0.015
-superpoint_nms_radius: 4
+superpoint_keypoint_threshold: 0.02
+superpoint_nms_radius: 3
 
-max_cnt: 150            # max feature number in feature tracking
-min_dist: 20            # min distance between two features
+max_cnt: 100            # max feature number in feature tracking
+min_dist: 15            # min distance between two features
 F_threshold: 1.0        # ransac threshold (pixel)
 
 ###################################################
