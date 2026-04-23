@@ -15,7 +15,7 @@
 #include <string>
 
 /** @brief 特征检测器类型 */
-enum class DetectorType { GFTT, FAST, SUPERPOINT };
+enum class DetectorType { GFTT, SUPERPOINT };
 
 /** @brief 检测器配置 */
 struct DetectorConfig {
@@ -23,9 +23,6 @@ struct DetectorConfig {
     // GFTT params
     double gftt_quality = 0.01;
     int min_dist = 20;
-    // FAST params
-    int fast_threshold = 20;
-    bool fast_nonmax = true;
     // SuperPoint params
     std::string sp_model_path;
     bool sp_use_gpu = true;
@@ -61,24 +58,6 @@ public:
 private:
     double quality_level_;
     int min_distance_;
-};
-
-/**
- * @class FASTDetector
- * @brief FAST 角点检测器
- *
- * 使用 cv::FAST 检测，按响应值排序，mask 过滤，top-N 截断。
- */
-class FASTDetector : public FeatureDetector {
-public:
-    FASTDetector(int threshold, bool nonmax_suppression)
-        : threshold_(threshold), nonmax_suppression_(nonmax_suppression) {}
-    std::string name() const override { return "FAST"; }
-    std::vector<cv::Point2f> detect(
-        const cv::Mat& image, const cv::Mat& mask, int max_cnt) const override;
-private:
-    int threshold_;
-    bool nonmax_suppression_;
 };
 
 /** @brief 工厂函数：根据配置创建检测器 */

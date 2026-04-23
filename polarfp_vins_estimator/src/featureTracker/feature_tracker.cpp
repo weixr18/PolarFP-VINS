@@ -91,12 +91,12 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
         if (ch.cur_img.empty()) continue;
         ch.cur_time = cur_time;
 
-        // 2.1 匹配跟踪 (LK 光流 或 BRIEF+FLANN)
+        // 2.1 匹配跟踪 (LK 光流)
         if (!ch.prev_pts.empty() && !ch.prev_img.empty()) {
             MatchResult mr = matcher_->track(
                 ch.prev_img, ch.cur_img,
                 ch.prev_pts, ch.local_ids, ch.track_cnt,
-                ch.prev_brief_desc);
+                {});
 
             ch.prev_pts = std::move(mr.prev_pts);
             ch.cur_pts  = std::move(mr.cur_pts);
@@ -147,7 +147,7 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
     // 3.2-3.4 新特征检测与补充
     for (auto& ch : channels) {
         if (ch.cur_img.empty()) continue;
-        // 3.2 逐通道提取新特征 (SuperPoint 从 batch 缓存取; GFTT/FAST 直接 detect)
+        // 3.2 逐通道提取新特征 (SuperPoint 从 batch 缓存取; GFTT 直接 detect)
         int n_max_cnt = MAX_CNT - static_cast<int>(ch.cur_pts.size());
         if (n_max_cnt > 0 && !ch.mask.empty()) {
             ch.n_pts = detector_->detect(ch.cur_img, ch.mask, n_max_cnt);
@@ -159,12 +159,6 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
             ch.cur_pts.push_back(p);
             ch.local_ids.push_back(ch.next_local_id++);
             ch.track_cnt.push_back(1);
-        }
-        // 3.4 提取描述子 (BRIEF+FLANN 模式下供下一帧匹配使用)
-        if (matcher_->name() == "BRIEF_FLANN" && !ch.cur_pts.empty()) {
-            ch.prev_brief_desc = matcher_->extractDescriptors(ch.cur_img, ch.cur_pts);
-        } else {
-            ch.prev_brief_desc.clear();
         }
     }
 
@@ -246,11 +240,7 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
 void FeatureTracker::initDetectorAndMatcher()
 {
     DetectorConfig det_cfg;
-    if (FEATURE_DETECTOR_TYPE == 1) {
-        det_cfg.type = DetectorType::FAST;
-        det_cfg.fast_threshold = FAST_THRESHOLD;
-        det_cfg.fast_nonmax = FAST_NONMAX_SUPPRESSION;
-    } else if (FEATURE_DETECTOR_TYPE == 2) {
+    if (FEATURE_DETECTOR_TYPE == 2) {
         det_cfg.type = DetectorType::SUPERPOINT;
         det_cfg.sp_model_path = SUPERPOINT_MODEL_PATH;
         det_cfg.sp_use_gpu = (SUPERPOINT_USE_GPU != 0);
@@ -265,17 +255,8 @@ void FeatureTracker::initDetectorAndMatcher()
     ROS_INFO("[PolarFP] Detector: %s", detector_->name().c_str());
 
     MatcherConfig match_cfg;
-    if (FEATURE_MATCHER_TYPE == 1) {
-        match_cfg.type = MatcherType::BRIEF_FLANN;
-        match_cfg.brief_bytes = BRIEF_DESCRIPTOR_BYTES;
-        match_cfg.brief_match_dist_ratio = BRIEF_MATCH_DIST_RATIO;
-    } else {
-        match_cfg.type = MatcherType::LK_FLOW;
-        match_cfg.lk_win_size = 21;
-        match_cfg.lk_max_level = 3;
-        match_cfg.flow_back = (FLOW_BACK != 0);
-        match_cfg.back_dist_thresh = 0.5;
-    }
+    match_cfg.type = MatcherType::LK_FLOW;
+    match_cfg.lk_win_size = 21;
     matcher_ = createMatcher(match_cfg);
     ROS_INFO("[PolarFP] Matcher: %s", matcher_->name().c_str());
 }
@@ -295,15 +276,9 @@ void FeatureTracker::setPolarChannels(const vector<string>& channel_names)
 void FeatureTracker::setPolarFilterConfig(const PolarFilterConfig& cfg)
 {
     polar_filter_cfg = cfg;
-    if (cfg.filter_type == FILTER_BILATERAL) {
-        ROS_INFO("[PolarFP] Bilateral filter: d=%d sigmaColor=%.1f sigmaSpace=%.1f",
-                 cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
-    } else if (cfg.filter_type == FILTER_GUIDED) {
+    if (cfg.filter_type == FILTER_GUIDED) {
         ROS_INFO("[PolarFP] Guided filter: radius=%d eps=%.4f",
                  cfg.guided_radius, cfg.guided_eps);
-    } else if (cfg.filter_type == FILTER_MEDIAN) {
-        ROS_INFO("[PolarFP] Median filter: kernel_size=%d",
-                 cfg.median_kernel_size);
     }
 }
 

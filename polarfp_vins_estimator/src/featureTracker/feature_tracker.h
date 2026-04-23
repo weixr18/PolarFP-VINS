@@ -74,11 +74,6 @@ struct ChannelState {
     double prev_time = 0;                       ///< 上一帧时间戳
     cv::Mat mask;                               ///< 空间分布掩码
 
-    // BRIEF/ORB 描述子(上一帧), 扁平存储: [feat0_desc, feat1_desc, ...]
-    // 每个描述子 brief_bytes 字节。LK 模式下为空。
-    std::vector<uchar> prev_brief_desc;
-    int brief_bytes = 32;
-
     int next_local_id = 0;                      ///< 本通道局部 ID 计数器，新特征从此取值
 
     ChannelState() = default;

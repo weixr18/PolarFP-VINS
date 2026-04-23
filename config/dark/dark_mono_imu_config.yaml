@@ -21,29 +21,22 @@ output_name: "dark_2026-04-16-14-09-36_MI_all"
 # 1.1 Frontend - filter params
 ###################################################
 
-# filter_type: 0=无滤波, 1=双边滤波, 2=导向滤波, 4=median滤波
+# filter_type: 0=无滤波, 2=导向滤波
 polar_filter_type: 2
-
-# 双边滤波参数 (filter_type=1 时使用)
-polar_bilateral_d: 9
-polar_bilateral_sigma_color: 200
-polar_bilateral_sigma_space: 30
 
 # 导向滤波参数 (filter_type=2 时使用)
 polar_guided_radius: 8 # guided_radius: 窗口半径（核大小 = 2*radius+1），越大越平滑
 polar_guided_eps: 0.0001 # guided_eps: 正则化参数，越大平滑越强，越小越保留细节
 
-# median滤波参数 (filter_type=4 时使用)
-polar_median_kernel_size: 9
-
 ###################################################
 # 1.2 Frontend - detector params
 ###################################################
 
-# 特征检测器/匹配器配置
-feature_detector_type: 0      # 0=GFTT, 1=FAST, 2=SUPERPOINT
-fast_threshold: 20
-fast_nonmax_suppression: 1
+# 特征检测器配置
+feature_detector_type: 2      # 0=GFTT, 2=SUPERPOINT
+max_cnt: 300            # max feature number in feature tracking
+min_dist: 15            # min distance between two features
+F_threshold: 1.0        # ransac threshold (pixel)
 
 # SuperPoint 参数 (feature_detector_type=2 时使用)
 superpoint_model_path: "/home/dhz/ws/vi_catkin_ws/src/PolarFP-VINS/polarfp_vins_estimator/nn/superpoint_v1.pt"
@@ -51,24 +44,8 @@ superpoint_use_gpu: 1
 superpoint_keypoint_threshold: 0.02
 superpoint_nms_radius: 3
 
-max_cnt: 100            # max feature number in feature tracking
-min_dist: 15            # min distance between two features
-F_threshold: 1.0        # ransac threshold (pixel)
-
 ###################################################
-# 1.3 Frontend - matcher params
-###################################################
-
-feature_matcher_type: 0       # 0=LK_FLOW, 1=BRIEF_FLANN
-brief_descriptor_bytes: 32
-flann_lsh_tables: 20
-flann_lsh_key_size: 20
-flann_multi_probe: 20
-brief_match_dist_ratio: 0.75
-
-
-###################################################
-# 1.4 Frontend - sensor params
+# 1.3 Frontend - sensor params
 ###################################################
 
 # camera calibration
@@ -93,7 +70,7 @@ body_T_cam0: !!opencv-matrix # T_ic
           0.,          0.,          0.,          1.        ]
 
 ###################################################
-# 1.5 Frontend - other params
+# 1.4 Frontend - other params
 ###################################################
 
 #Multiple thread support

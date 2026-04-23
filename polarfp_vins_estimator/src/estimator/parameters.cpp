@@ -54,12 +54,7 @@ PolarFilterConfig POLAR_FILTER_CFG;
 int POLAR_HASH_GRID_SIZE = 5;
 
 // Feature detector/matcher configuration
-int FEATURE_DETECTOR_TYPE = 0;   // 0=GFTT, 1=FAST
-int FAST_THRESHOLD = 20;
-int FAST_NONMAX_SUPPRESSION = 1;
-int FEATURE_MATCHER_TYPE = 0;    // 0=LK_FLOW, 1=BRIEF_FLANN
-int BRIEF_DESCRIPTOR_BYTES = 32;
-float BRIEF_MATCH_DIST_RATIO = 0.75f;
+int FEATURE_DETECTOR_TYPE = 0;   // 0=GFTT, 2=SUPERPOINT
 int RANDOM_SEED = -1;
 
 // SuperPoint parameters
@@ -247,19 +242,6 @@ void readParameters(std::string config_file)
     if (!fsSettings["polar_filter_type"].empty())
         POLAR_FILTER_CFG.filter_type = static_cast<PolarFilterType>((int)fsSettings["polar_filter_type"]);
 
-    // 双边滤波参数
-    if (POLAR_FILTER_CFG.filter_type == FILTER_BILATERAL) {
-        if (!fsSettings["polar_bilateral_d"].empty())
-            POLAR_FILTER_CFG.bilateral_d = (int)fsSettings["polar_bilateral_d"];
-        if (!fsSettings["polar_bilateral_sigma_color"].empty())
-            POLAR_FILTER_CFG.bilateral_sigmaColor = (double)fsSettings["polar_bilateral_sigma_color"];
-        if (!fsSettings["polar_bilateral_sigma_space"].empty())
-            POLAR_FILTER_CFG.bilateral_sigmaSpace = (double)fsSettings["polar_bilateral_sigma_space"];
-        ROS_INFO("[PolarFP] Bilateral filter: d=%d sigmaColor=%.1f sigmaSpace=%.1f",
-                 POLAR_FILTER_CFG.bilateral_d, POLAR_FILTER_CFG.bilateral_sigmaColor,
-                 POLAR_FILTER_CFG.bilateral_sigmaSpace);
-    }
-
     // 导向滤波参数
     if (POLAR_FILTER_CFG.filter_type == FILTER_GUIDED) {
         if (!fsSettings["polar_guided_radius"].empty())
@@ -270,48 +252,15 @@ void readParameters(std::string config_file)
                  POLAR_FILTER_CFG.guided_radius, POLAR_FILTER_CFG.guided_eps);
     }
 
-    // NLM 滤波参数
-    if (POLAR_FILTER_CFG.filter_type == FILTER_NLM) {
-        if (!fsSettings["polar_nlm_h"].empty())
-            POLAR_FILTER_CFG.nlm_h = (float)(double)fsSettings["polar_nlm_h"];
-        if (!fsSettings["polar_nlm_template"].empty())
-            POLAR_FILTER_CFG.nlm_template = (int)fsSettings["polar_nlm_template"];
-        if (!fsSettings["polar_nlm_search"].empty())
-            POLAR_FILTER_CFG.nlm_search = (int)fsSettings["polar_nlm_search"];
-        ROS_INFO("[PolarFP] NLM filter: h=%.1f template=%d search=%d",
-                 POLAR_FILTER_CFG.nlm_h, POLAR_FILTER_CFG.nlm_template,
-                 POLAR_FILTER_CFG.nlm_search);
-    }
-
-    // 中值滤波参数
-    if (POLAR_FILTER_CFG.filter_type == FILTER_MEDIAN) {
-        if (!fsSettings["polar_median_kernel_size"].empty())
-            POLAR_FILTER_CFG.median_kernel_size = (int)fsSettings["polar_median_kernel_size"];
-        ROS_INFO("[PolarFP] Median filter: kernel_size=%d",
-                 POLAR_FILTER_CFG.median_kernel_size);
-    }
-
-    // Feature detector/matcher parameters
+    // Feature detector parameters
     if (!fsSettings["feature_detector_type"].empty())
         FEATURE_DETECTOR_TYPE = (int)fsSettings["feature_detector_type"];
-    if (!fsSettings["fast_threshold"].empty())
-        FAST_THRESHOLD = (int)fsSettings["fast_threshold"];
-    if (!fsSettings["fast_nonmax_suppression"].empty())
-        FAST_NONMAX_SUPPRESSION = (int)fsSettings["fast_nonmax_suppression"];
-    if (!fsSettings["feature_matcher_type"].empty())
-        FEATURE_MATCHER_TYPE = (int)fsSettings["feature_matcher_type"];
-    if (!fsSettings["brief_descriptor_bytes"].empty())
-        BRIEF_DESCRIPTOR_BYTES = (int)fsSettings["brief_descriptor_bytes"];
-    if (!fsSettings["brief_match_dist_ratio"].empty())
-        BRIEF_MATCH_DIST_RATIO = (float)(double)fsSettings["brief_match_dist_ratio"];
     if (!fsSettings["random_seed"].empty())
         RANDOM_SEED = (int)fsSettings["random_seed"];
 
-    const char* det_names[] = {"GFTT", "FAST", "SUPERPOINT"};
-    const char* match_names[] = {"LK_FLOW", "BRIEF_FLANN"};
-    ROS_INFO("[PolarFP] Detector: %s, Matcher: %s",
-             FEATURE_DETECTOR_TYPE < 3 ? det_names[FEATURE_DETECTOR_TYPE] : "unknown",
-             FEATURE_MATCHER_TYPE < 2 ? match_names[FEATURE_MATCHER_TYPE] : "unknown");
+    const char* det_names[] = {"GFTT", "SUPERPOINT"};
+    ROS_INFO("[PolarFP] Detector: %s, Matcher: LK_FLOW",
+             FEATURE_DETECTOR_TYPE < 2 ? det_names[FEATURE_DETECTOR_TYPE] : "unknown");
 
     // SuperPoint parameters
     if (FEATURE_DETECTOR_TYPE == 2) {

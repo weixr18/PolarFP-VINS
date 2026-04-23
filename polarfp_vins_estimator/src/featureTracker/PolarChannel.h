@@ -61,10 +61,7 @@ struct PolarChannelResult {
  */
 enum PolarFilterType {
     FILTER_NONE = 0,
-    FILTER_BILATERAL = 1,
     FILTER_GUIDED = 2,
-    FILTER_NLM = 3,
-    FILTER_MEDIAN = 4,
 };
 
 /**
@@ -77,22 +74,9 @@ struct PolarFilterConfig {
     // 滤波器类型选择
     PolarFilterType filter_type = FILTER_NONE;  ///< 滤波器类型（默认不启用）
 
-    // 双边滤波参数
-    int bilateral_d = 9;                ///< 邻域直径
-    double bilateral_sigmaColor = 200;  ///< 颜色空间标准差
-    double bilateral_sigmaSpace = 30;   ///< 空间域标准差
-
     // 导向滤波参数
     int guided_radius = 4;              ///< 局部窗口半径（核大小 = 2*radius+1）
     double guided_eps = 0.01;           ///< 正则化参数，越大平滑越强
-
-    // NLM（非局部均值）滤波参数
-    float nlm_h = 50.0f;                ///< 滤波强度
-    int nlm_template = 5;               ///< 模板窗口大小
-    int nlm_search = 21;                ///< 搜索窗口大小
-
-    // 中值滤波参数
-    int median_kernel_size = 5;         ///< 中值滤波核大小（必须为奇数且 > 1）
 };
 
 /**

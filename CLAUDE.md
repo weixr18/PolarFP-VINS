@@ -17,7 +17,7 @@ ROS catkin, C++14/17. SuperPoint detection requires LibTorch.
 
 | Directory | Responsibility |
 |-----------|----------------|
-| `featureTracker/` | Polar channel decoding (`PolarChannel`), detection (GFTT/FAST/SuperPoint), matching (LK/BRIEF+FLANN) |
+| `featureTracker/` | Polar channel decoding (`PolarChannel`), detection (GFTT/SuperPoint), matching (LK flow) |
 | `estimator/` | Sliding-window BA, IMU preintegration, initialization, parameter loading |
 | `factor/` | Ceres cost functions (IMU, projection, marginalization) |
 | `initial/` | SFM, gyro bias, velocity/gravity initialization |
@@ -27,10 +27,10 @@ ROS catkin, C++14/17. SuperPoint detection requires LibTorch.
 
 | File | Description |
 |------|-------------|
-| `featureTracker/PolarChannel.h/cpp` | Raw image → S0/DoP/AoP channels via Stokes parameters. Supports bilateral/guided/NLM filtering |
+| `featureTracker/PolarChannel.h/cpp` | Raw image → S0/DoP/AoP channels via Stokes parameters. Supports none/guided filtering |
 | `featureTracker/feature_tracker.h/cpp` | Multi-channel tracking: per-channel track → batch SuperPoint detect → merge results |
-| `featureTracker/feature_tracker_detector.h/cpp` | Abstract `FeatureDetector`: GFTT / FAST / SuperPoint |
-| `featureTracker/feature_tracker_matcher.h/cpp` | Abstract `FeatureMatcher`: LK flow / BRIEF+FLANN |
+| `featureTracker/feature_tracker_detector.h/cpp` | Abstract `FeatureDetector`: GFTT / SuperPoint |
+| `featureTracker/feature_tracker_matcher.h/cpp` | `LKFlowMatcher` (only matcher type) |
 | `featureTracker/superpoint_detector.h/cpp` | LibTorch SuperPoint with PIMPL, batch multi-channel inference |
 | `featureTracker/parameters.h/cpp` | YAML parameter loading |
 | `estimator/estimator.cpp` | Main estimator, wires polar channels into FeatureTracker |
@@ -54,9 +54,8 @@ YAML configs in `config/`. Key fields:
 
 - `use_polar`: 1 = enable polarization, 0 = returns empty featureFrame (non-polar VINS-Fusion path removed)
 - `polar_channels`: e.g. `"s0,dop,aopsin,aopcos"`
-- `feature_detector_type`: 0=GFTT, 1=FAST, 2=SUPERPOINT
-- `feature_matcher_type`: 0=LK_FLOW, 1=BRIEF_FLANN
-- `polar_filter_type`: 0=none, 1=bilateral, 2=guided, 3=NLM(slow, not recommanded)
+- `feature_detector_type`: 0=GFTT, 2=SUPERPOINT
+- `polar_filter_type`: 0=none, 2=guided
 
 ## Workflow & Principles
 

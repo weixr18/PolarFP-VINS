@@ -73,12 +73,7 @@ extern PolarFilterConfig POLAR_FILTER_CFG;
 extern int POLAR_HASH_GRID_SIZE;   // 默认 5 (px)
 
 // Feature detector/matcher configuration
-extern int FEATURE_DETECTOR_TYPE;     // 0=GFTT, 1=FAST, 2=SUPERPOINT
-extern int FAST_THRESHOLD;
-extern int FAST_NONMAX_SUPPRESSION;
-extern int FEATURE_MATCHER_TYPE;      // 0=LK_FLOW, 1=BRIEF_FLANN
-extern int BRIEF_DESCRIPTOR_BYTES;
-extern float BRIEF_MATCH_DIST_RATIO;
+extern int FEATURE_DETECTOR_TYPE;     // 0=GFTT, 2=SUPERPOINT
 
 // Random seed for reproducibility (-1 = use current time)
 extern int RANDOM_SEED;

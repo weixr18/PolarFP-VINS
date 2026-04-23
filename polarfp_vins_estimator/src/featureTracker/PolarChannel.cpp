@@ -171,16 +171,8 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
     cosaop.convertTo(cos_img, CV_8U, 127.5, 127.5); // cos: [-1,1] → [0,255]
     S_0.convertTo(S0_img, CV_8U);                   // S0: 直接截断
 
-    // 可选：对 DoP/sin/cos 施加滤波，降低低光照噪声
-    if (cfg.filter_type == FILTER_BILATERAL) {
-        cv::Mat dop_filt, sin_filt, cos_filt;
-        cv::bilateralFilter(dop_img, dop_filt, cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
-        cv::bilateralFilter(sin_img, sin_filt, cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
-        cv::bilateralFilter(cos_img, cos_filt, cfg.bilateral_d, cfg.bilateral_sigmaColor, cfg.bilateral_sigmaSpace);
-        dop_img = dop_filt;
-        sin_img = sin_filt;
-        cos_img = cos_filt;
-    } else if (cfg.filter_type == FILTER_GUIDED) {
+    // 可选：对 DoP/sin/cos 施加导向滤波，降低低光照噪声
+    if (cfg.filter_type == FILTER_GUIDED) {
         cv::Mat dop_f, sin_f, cos_f, s0_f;
         dop_img.convertTo(dop_f, CV_64F, 1.0 / 255.0);
         sin_img.convertTo(sin_f, CV_64F, 1.0 / 255.0);
@@ -194,24 +186,7 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
         dop_g.convertTo(dop_img, CV_8U, 255.0);
         sin_g.convertTo(sin_img, CV_8U, 255.0);
         cos_g.convertTo(cos_img, CV_8U, 255.0);
-    } else if (cfg.filter_type == FILTER_NLM) {
-        cv::Mat dop_nlm, sin_nlm, cos_nlm;
-        cv::fastNlMeansDenoising(dop_img, dop_nlm, cfg.nlm_h, cfg.nlm_template, cfg.nlm_search);
-        cv::fastNlMeansDenoising(sin_img, sin_nlm, cfg.nlm_h, cfg.nlm_template, cfg.nlm_search);
-        cv::fastNlMeansDenoising(cos_img, cos_nlm, cfg.nlm_h, cfg.nlm_template, cfg.nlm_search);
-        dop_img = dop_nlm;
-        sin_img = sin_nlm;
-        cos_img = cos_nlm;
-    } else if (cfg.filter_type == FILTER_MEDIAN) {
-        cv::Mat dop_median, sin_median, cos_median;
-        cv::medianBlur(dop_img, dop_median, cfg.median_kernel_size);
-        cv::medianBlur(sin_img, sin_median, cfg.median_kernel_size);
-        cv::medianBlur(cos_img, cos_median, cfg.median_kernel_size);
-        dop_img = dop_median;
-        sin_img = sin_median;
-        cos_img = cos_median;
     }
-
     // 组装结果
     PolarChannelResult result;
     result.S0_img = S0_img;
