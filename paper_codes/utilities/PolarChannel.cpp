@@ -171,8 +171,11 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
     sinaop.convertTo(sin_img, CV_8U, 127.5, 127.5); // sin: [-1,1] → [0,255]
     cosaop.convertTo(cos_img, CV_8U, 127.5, 127.5); // cos: [-1,1] → [0,255]
     S_0.convertTo(S0_img, CV_8U);                   // S0: 直接截断
-    S_1.convertTo(S1_img, CV_8U, 0.5, 127.5);       // S1: [-255,255] → [0,255]
-    S_2.convertTo(S2_img, CV_8U, 0.5, 127.5);       // S2: [-255,255] → [0,255]
+    const double S1S2_ABS_SCALE = 30.0;               // tunable: |S1|/|S2| scale factor
+    cv::Mat S1_abs = cv::abs(S_1) * S1S2_ABS_SCALE;
+    cv::Mat S2_abs = cv::abs(S_2) * S1S2_ABS_SCALE;
+    S1_abs.convertTo(S1_img, CV_8U);                // |S1|*scale: [0,255] → [0,255]
+    S2_abs.convertTo(S2_img, CV_8U);                // |S2|*scale: [0,255] → [0,255]
 
     // 可选：对 DoP/sin/cos 施加导向滤波，降低低光照噪声
     if (cfg.filter_type == FILTER_GUIDED) {

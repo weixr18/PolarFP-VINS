@@ -17,19 +17,20 @@
 #include <vector>
 
 struct SceneInfo {
-    std::string name;   // subdirectory / bag name
-    std::string label;  // lighting condition label
+    std::string name;       // subdirectory / bag name
+    std::string label;      // row label (Data 1/2/3)
+    std::string lux_range;  // illumination range text
 };
 
 int main() {
     // ── Scene definitions ──
     const std::vector<SceneInfo> scenes = {
-        {"13-27-22", "94-205 lux"},
-        {"13-54-30", "2.6-18.6 lux"},
-        {"14-15-03", "0.9-4.8 lux"},
+        {"13-27-22", "Data 1", "94-205 lux"},
+        {"13-54-30", "Data 2", "2.6-18.6 lux"},
+        {"14-15-03", "Data 3", "0.9-4.8 lux"},
     };
 
-    const std::vector<std::string> ch_names = {"S0", "S1", "S2", "P0", "P1", "P2"};
+    const std::vector<std::string> ch_names = {"S0", "S1(30x)", "S2(30x)", "P0", "P1", "P2"};
     const std::vector<std::string> ch_dirs  = {"s0", "s1", "s2", "p0", "p1", "p2"};
     const int NUM_SCENES = 3;
     const int NUM_CHANNELS = 6;
@@ -97,13 +98,18 @@ int main() {
 
     // Draw row labels and place images
     for (int r = 0; r < NUM_SCENES; r++) {
-        // Row label (centered vertically on the left)
+        // Row label and lux sub-label (centered vertically on the left)
         int ry = TOP_MARGIN + r * (CELL_H + 2 * PAD + GAP_V) + PAD + CELL_H / 2;
         int baseline = 0;
         cv::Size lbl_size = cv::getTextSize(scenes[r].label, font, 0.6, 1, &baseline);
         cv::putText(canvas, scenes[r].label,
-                    cv::Point(LEFT_MARGIN - lbl_size.width - 12, ry + lbl_size.height / 2),
+                    cv::Point(LEFT_MARGIN - lbl_size.width - 12, ry - 6),
                     font, 0.6, cv::Scalar(0, 0, 0), 1);
+        // Sub-label: illumination range below the row label
+        cv::Size lux_size = cv::getTextSize(scenes[r].lux_range, font, 0.45, 1, &baseline);
+        cv::putText(canvas, scenes[r].lux_range,
+                    cv::Point(LEFT_MARGIN - lux_size.width - 12, ry + 14),
+                    font, 0.45, cv::Scalar(120, 120, 120), 1);
 
         for (int c = 0; c < NUM_CHANNELS; c++) {
             int x0 = LEFT_MARGIN + c * (CELL_W + 2 * PAD + GAP_H);

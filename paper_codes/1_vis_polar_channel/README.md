@@ -23,7 +23,7 @@ Three scenes from `~/data/dark/0416/`:
 
 ```bash
 cd paper_codes/1_vis_polar_channel
-/usr/bin/python3 extract_first_frames.py \
+/usr/bin/python3 get_data_1.py \
   ~/data/dark/0416/13-27-22/2026-04-16-13-27-22.bag \
   ~/data/dark/0416/13-54-30/2026-04-16-13-54-30.bag \
   ~/data/dark/0416/14-09-36/2026-04-16-14-09-36.bag \
@@ -73,10 +73,10 @@ Composite table at `output/composite.png`:
 | File | Purpose |
 |------|---------|
 | `CMakeLists.txt` | Standalone CMake project (OpenCV only) |
-| `extract_first_frames.py` | Extract first frame from ROS bags to PNG |
+| `get_data_1.py` | Extract first frame from ROS bags to PNG |
+| `vis_polar_channel_main.cpp` | Read PNG → compute channels → save images + composite |
 | `PolarChannel.h` | Polar channel computation (copied from `polarfp_vins_estimator`, modified to expose S1/S2) |
 | `PolarChannel.cpp` | Implementation |
-| `main.cpp` | Read PNG → compute channels → save images + composite |
 | `data/` | Input raw frames (PNG, 612×512) |
 | `output/` | Generated channel images and composite |
 

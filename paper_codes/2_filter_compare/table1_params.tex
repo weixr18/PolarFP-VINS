@@ -1,0 +1,29 @@
+% Table 1 — 偏振通道图像滤波算法参数
+% 用法: \input{table1_params.tex} 或复制到论文中
+%
+% 编译需要: booktabs 宏包
+%   \usepackage{booktabs}
+
+\begin{table}[tbp]
+\centering
+\caption{偏振通道预处理滤波算法参数设置}
+\label{tab:filter_params}
+\begin{tabular}{@{}lccc@{}}
+\toprule
+滤波算法 & 参数 & 取值 & 说明 \\
+\midrule
+中值滤波 (Median)     & 核大小        & $3\times 3$  & 执行3轮滤波 \\
+\addlinespace
+导向滤波 (Guided)     & 窗口半径 $r$  & 8            & 以 $S_0$ 强度图像为引导 \\*
+                     & 正则化 $\varepsilon$ & 0.0001 & \\
+\addlinespace
+双边滤波 (Bilateral)  & 邻域直径 $d$  & 9           & \\*
+                     & $\sigma_{\text{color}}$ & 200  & 颜色空间标准差 \\*
+                     & $\sigma_{\text{space}}$ & 30   & 空间域标准差 \\
+\addlinespace
+非局部均值去噪 (NLM)  & 滤波强度 $h$  & 50           & \\*
+                     & 模板窗口       & $5\times 5$  & \\*
+                     & 搜索窗口       & $21\times 21$ & \\
+\bottomrule
+\end{tabular}
+\end{table}
