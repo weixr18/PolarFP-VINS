@@ -71,6 +71,7 @@ extern int FLOW_BACK;
 extern std::vector<std::string> POLAR_CHANNELS;
 extern PolarFilterConfig POLAR_FILTER_CFG;
 extern int POLAR_HASH_GRID_SIZE;   // 默认 5 (px)
+extern bool POLARFP_STATS_ENABLED; // 特征点统计开关
 
 // Feature detector/matcher configuration
 extern int FEATURE_DETECTOR_TYPE;     // 0=GFTT, 2=SUPERPOINT

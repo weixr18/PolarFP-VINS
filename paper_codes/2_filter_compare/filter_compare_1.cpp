@@ -212,10 +212,6 @@ static void buildCompareFigure(
             cv::Mat bgr;
             cv::cvtColor(imgs[c], bgr, cv::COLOR_GRAY2BGR);
 
-            // 在单元格左上角标注方法名缩写（小字）
-            cv::putText(bgr, COL_LABELS[c],
-                        cv::Point(3, 14), font, 0.4, cv::Scalar(0, 200, 0), 1);
-
             bgr.copyTo(canvas(cv::Rect(x0 + PAD, y0 + PAD, cell_w, cell_h)));
         }
     }

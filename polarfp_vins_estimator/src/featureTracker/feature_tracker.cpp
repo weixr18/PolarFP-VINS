@@ -14,6 +14,9 @@
 #include "feature_tracker_matcher.h"
 #include "superpoint_detector.h"
 
+#include <ctime>
+#include <iomanip>
+
 /**
  * @brief 根据status状态压缩Point2f向量（原地修改）
  * @param v 待压缩向量，status非零位置元素被保留
@@ -210,18 +213,68 @@ FeatureTracker::trackImage(double _cur_time, const cv::Mat &_img, const cv::Mat 
     // =============================================
     global_pool_.beginFrame();
     global_pool_.propagateTracked(channels);
+
+    int num_global_matched = 0, num_global_total = 0;
+    double avg_global_track = 0.0;
+
+    if (POLARFP_STATS_ENABLED) {
+        num_global_matched = global_pool_.cur_globals.size();
+
+        // 计算 avg_global_track: 只对传播来的特征统计（不含新注册的特征）
+        double sum_track = 0;
+        if (!global_pool_.cur_globals.empty()) {
+            // 通道名 → 通道索引
+            std::map<std::string, size_t> ch_idx;
+            for (size_t i = 0; i < channels.size(); i++)
+                ch_idx[channels[i].name] = i;
+
+            for (const auto& [gid, gf] : global_pool_.cur_globals) {
+                int max_track = 0;
+                for (const auto& [ch_name, local_id] : gf.local_ids) {
+                    auto it = ch_idx.find(ch_name);
+                    if (it == ch_idx.end()) continue;
+                    const auto& ch = channels[it->second];
+                    for (size_t i = 0; i < ch.local_ids.size(); i++) {
+                        if (ch.local_ids[i] == local_id) {
+                            max_track = std::max(max_track, ch.track_cnt[i]);
+                            break;
+                        }
+                    }
+                }
+                sum_track += max_track;
+            }
+            avg_global_track = sum_track / global_pool_.cur_globals.size();
+        }
+    }
+
     global_pool_.registerUnboundFeatures(channels, MIN_DIST);
+
+    if (POLARFP_STATS_ENABLED)
+        num_global_total = global_pool_.cur_globals.size();
+
     auto featureFrame = global_pool_.buildFeatureFrame(channels);
     global_pool_.endFrame();
 
     // =============================================
-    // 6. 可视化
+    // 6. 统计写入 (仅受开关控制时收集)
+    // =============================================
+    if (POLARFP_STATS_ENABLED) {
+        if (!stats_initialized_) {
+            stats_first_timestamp_ = cur_time;
+            initStatsFile();
+        }
+        writeStatsRow(num_global_matched, num_global_total, avg_global_track);
+        stats_frame_idx_++;
+    }
+
+    // =============================================
+    // 7. 可视化
     // =============================================
     if (SHOW_TRACK)
         drawTrackPolar();
 
     // =============================================
-    // 7. 更新全局状态
+    // 8. 更新全局状态
     // =============================================
     if (!channels.empty() && !channels[0].cur_img.empty())
         cur_img = channels[0].cur_img;
@@ -472,6 +525,51 @@ void FeatureTracker::removeOutliers(set<int> &removePtsIds)
         reduceVector(ch.local_ids, status);
         reduceVector(ch.track_cnt, status);
     }
+}
+
+
+// =============================================
+// 融合特征点统计
+// =============================================
+
+void FeatureTracker::initStatsFile()
+{
+    // 时间戳 → yyyymmdd_hhmmss
+    time_t rawtime = static_cast<time_t>(stats_first_timestamp_);
+    struct tm timeinfo;
+    localtime_r(&rawtime, &timeinfo);
+    char timebuf[32];
+    strftime(timebuf, sizeof(timebuf), "%Y%m%d_%H%M%S", &timeinfo);
+
+    // 通道后缀
+    std::string ch_suffix;
+    for (size_t i = 0; i < channels.size(); i++) {
+        if (i > 0) ch_suffix += "_";
+        ch_suffix += channels[i].name;
+    }
+
+    stats_csv_path_ = OUTPUT_FOLDER + "/polarfp_stats_" + timebuf + "_" + ch_suffix + ".csv";
+
+    std::ofstream f(stats_csv_path_);
+    f << "frame_idx,timestamp,num_global_matched,num_global_total,avg_global_track\n";
+    f.close();
+
+    stats_initialized_ = true;
+    ROS_INFO("[PolarFP] Stats CSV: %s", stats_csv_path_.c_str());
+}
+
+
+void FeatureTracker::writeStatsRow(int num_global_matched, int num_global_total, double avg_global_track)
+{
+    if (!stats_initialized_) return;
+
+    std::ofstream f(stats_csv_path_, std::ios::app);
+    f << stats_frame_idx_ << ","
+      << std::fixed << std::setprecision(6) << cur_time << ","
+      << num_global_matched << ","
+      << num_global_total << ","
+      << std::fixed << std::setprecision(2) << avg_global_track << "\n";
+    f.close();
 }
 
 

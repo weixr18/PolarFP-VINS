@@ -1,0 +1,66 @@
+% table2_metrics.tex
+% 偏振通道滤波方法量化对比 — 对应 Plan A 柱状图
+% 编译: xelatex
+% 依赖: \usepackage{booktabs,multirow,amsmath}
+
+\begin{table*}[t]
+\centering
+\caption{不同滤波方法与偏振通道组合的特征跟踪量化结果}
+\label{tab:filter_metrics}
+\footnotesize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{llccccccccc}
+\toprule
+& & \multicolumn{3}{c}{\bfseries 明亮光照 (94--205~lux)} & \multicolumn{3}{c}{\bfseries 中等光照 (2.6--18.6~lux)} & \multicolumn{3}{c}{\bfseries 暗光 (0.9--4.8~lux)} \\
+\cmidrule(lr){3-5} \cmidrule(lr){6-8} \cmidrule(lr){9-11}
+\multirow{-2}{*}{\bfseries 滤波方法} & \multirow{-2}{*}{\bfseries 通道} & 内点数$\uparrow$ & 内点比例$\uparrow$ & 时间/ms$\downarrow$ & 内点数$\uparrow$ & 内点比例$\uparrow$ & 时间/ms$\downarrow$ & 内点数$\uparrow$ & 内点比例$\uparrow$ & 时间/ms$\downarrow$ \\
+\midrule
+
+% ---- Raw ----
+\multirow{3}{*}{Raw}
+    & P0 (DoP)     & \textbf{250.9} & 0.868 & 4.7  & \textbf{98.2} & 0.608 & \textbf{7.3}  & \textbf{43.8} & 0.360 & 11.9 \\
+    & P1 (sinAoP)  & \textbf{277.7} & 0.822 & 5.3  & \textbf{46.6} & 0.338 & 12.0 & \textbf{32.2} & 0.244 & 12.3 \\
+    & P2 (cosAoP)  & \textbf{262.8} & 0.802 & 5.1  & \textbf{61.2} & 0.422 & 11.5 & \textbf{41.1} & 0.303 & 12.2 \\
+\cmidrule{2-11}
+
+% ---- Median ----
+\multirow{3}{*}{中值滤波}
+    & P0 (DoP)     & 172.9 & 0.876 & \textbf{4.1}  & 83.7  & 0.574 & 7.4  & 32.7  & 0.359 & 11.1 \\
+    & P1 (sinAoP)  & 265.5 & 0.834 & \textbf{5.0}  & 39.6  & 0.372 & 11.7 & 23.9  & 0.262 & 11.9 \\
+    & P2 (cosAoP)  & 246.3 & 0.802 & \textbf{4.9}  & 57.5  & 0.463 & 10.7 & 30.8  & 0.316 & 11.8 \\
+\cmidrule{2-11}
+
+% ---- Guided ----
+\multirow{3}{*}{导向滤波}
+    & P0 (DoP)     & 152.7 & \textbf{0.910} & 8.7  & 62.8  & \textbf{0.710} & 9.0  & 37.2  & \textbf{0.622} & \textbf{10.0} \\
+    & P1 (sinAoP)  & 188.4 & \textbf{0.839} & 9.2  & 24.4  & \textbf{0.653} & \textbf{9.8}  & 11.5  & \textbf{0.549} & \textbf{11.4} \\
+    & P2 (cosAoP)  & 213.2 & \textbf{0.883} & 9.1  & 53.2  & \textbf{0.781} & \textbf{8.7}  & 20.6  & \textbf{0.650} & \textbf{9.7} \\
+\cmidrule{2-11}
+
+% ---- Bilateral ----
+\multirow{3}{*}{双边滤波}
+    & P0 (DoP)     & 171.0 & 0.842 & 7.4  & 78.9  & 0.588 & 10.3 & 26.8  & 0.406 & 13.9 \\
+    & P1 (sinAoP)  & 244.4 & 0.810 & 8.3  & 28.4  & 0.391 & 14.8 & 19.3  & 0.312 & 15.1 \\
+    & P2 (cosAoP)  & 232.1 & 0.784 & 8.2  & 48.3  & 0.489 & 13.4 & 25.1  & 0.359 & 15.0 \\
+\cmidrule{2-11}
+
+% ---- NLM ----
+\multirow{3}{*}{NLM}
+    & P0 (DoP)     & 58.5  & 0.876 & 136.1 & 56.4  & 0.583 & 146.8 & 33.3  & 0.362 & 147.5 \\
+    & P1 (sinAoP)  & 235.7 & 0.839 & 141.7 & 41.5  & 0.348 & 155.0 & 29.8  & 0.248 & 151.3 \\
+    & P2 (cosAoP)  & 207.0 & 0.795 & 139.7 & 60.2  & 0.443 & 150.7 & 38.6  & 0.304 & 147.0 \\
+
+\midrule
+\end{tabular}
+
+\vspace{4pt}
+\begin{minipage}{\textwidth}
+\footnotesize
+\textbf{注：}
+内点数（Avg Inlier）为帧平均 RANSAC 基础矩阵内点数，内点比例（Inlier Ratio）为内点数与匹配数之比，时间为单帧检测+匹配+验证的平均耗时。
+内点数（Avg Inlier）越高越好，反映后端可用的几何一致特征匹配数量；
+内点比例（Inlier Ratio）为内点数与光流匹配数之比，反映匹配精度；
+时间为一帧内解码+滤波+检测+匹配+验证的全流程耗时。
+\end{minipage}
+
+\end{table*}

@@ -20,3 +20,4 @@ camera_chessboard_data.dat
 **/build/
 **/data/
 *.png
+*.csv

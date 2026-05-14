@@ -208,4 +208,13 @@ private:
 
     std::shared_ptr<FeatureDetector> detector_;
     std::shared_ptr<FeatureMatcher> matcher_;
+
+    // ---- 融合特征点统计收集 ----
+    bool stats_initialized_ = false;
+    std::string stats_csv_path_;
+    int stats_frame_idx_ = 0;
+    double stats_first_timestamp_ = 0.0;
+
+    void initStatsFile();
+    void writeStatsRow(int num_global_matched, int num_global_total, double avg_global_track);
 };

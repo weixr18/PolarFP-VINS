@@ -52,6 +52,7 @@ int FLOW_BACK;
 std::vector<std::string> POLAR_CHANNELS;
 PolarFilterConfig POLAR_FILTER_CFG;
 int POLAR_HASH_GRID_SIZE = 5;
+bool POLARFP_STATS_ENABLED = false;
 
 // Feature detector/matcher configuration
 int FEATURE_DETECTOR_TYPE = 0;   // 0=GFTT, 2=SUPERPOINT
@@ -220,6 +221,12 @@ void readParameters(std::string config_file)
         POLAR_HASH_GRID_SIZE = (int)fsSettings["polar_hash_grid_size"];
     else
         POLAR_HASH_GRID_SIZE = 5;
+
+    // 特征点统计开关
+    if (!fsSettings["polarfp_stats_enabled"].empty())
+        POLARFP_STATS_ENABLED = ((int)fsSettings["polarfp_stats_enabled"]) != 0;
+    else
+        POLARFP_STATS_ENABLED = false;
 
     std::string channels_str;
     fsSettings["polar_channels"] >> channels_str;
