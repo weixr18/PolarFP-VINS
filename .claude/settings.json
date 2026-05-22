@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//home/dhz/SLAM/output/EXP-4-c100-d15/**)",
+      "Read(//home/dhz/SLAM/scripts/output-analysis/**)"
+    ]
+  }
+}
