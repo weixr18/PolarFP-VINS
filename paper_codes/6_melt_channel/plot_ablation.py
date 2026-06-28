@@ -355,19 +355,32 @@ def _plot_feature_stats_group(results, output_dir, ds_indices, figure_label):
 
         axes[0, local_idx].set_title(f"Dataset {ds_label}", fontsize=10, fontweight="bold")
         axes[0, local_idx].set_ylabel("Number of Matched Features", fontsize=9)
+        axes[0, local_idx].set_xlabel("Frame Number", fontsize=9)
         axes[1, local_idx].set_ylabel("Effective Observations", fontsize=9)
-        axes[1, local_idx].set_xlabel("Frame", fontsize=9)
+        axes[1, local_idx].set_xlabel("Frame Number", fontsize=9)
         axes[0, local_idx].grid(True, alpha=0.2)
         axes[1, local_idx].grid(True, alpha=0.2)
 
-    # Shared legend
-    legend_elements = [
-        plt.Line2D([0], [0], color=COMBOS[k]["color"], linewidth=2, label=COMBOS[k]["label"])
-        for k in COMBO_KEYS
-    ]
-    fig.legend(handles=legend_elements, loc="upper center", ncol=4, fontsize=10)
+    # Per-subplot legend below each column
+    for local_idx in range(n):
+        legend_elements = [
+            plt.Line2D([0], [0], color=COMBOS[k]["color"], linewidth=2, label=COMBOS[k]["label"])
+            for k in COMBO_KEYS
+        ]
+        axes[1, local_idx].legend(
+            handles=legend_elements, loc="upper center", ncol=4,
+            fontsize=8, framealpha=0.8, bbox_to_anchor=(0.5, -0.6)
+        )
 
-    fig.tight_layout(rect=[0, 0, 1, 0.95])
+    # Overall figure title
+    if figure_label == "part1":
+        fig.suptitle("Channel Ablation: Matched Features & Effective Observations (Datasets [1]–[4])",
+                     fontsize=12, fontweight="bold", y=0.98)
+    else:
+        fig.suptitle("Channel Ablation: Matched Features & Effective Observations (Datasets [5]–[8])",
+                     fontsize=12, fontweight="bold", y=0.98)
+
+    fig.tight_layout(rect=[0, 0.05, 1, 0.94])
     path = output_dir / f"fig2_feature_stats_{figure_label}.png"
     fig.savefig(path, dpi=300)
     print(f"Saved: {path}")
