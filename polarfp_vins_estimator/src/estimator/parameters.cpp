@@ -250,7 +250,15 @@ void readParameters(std::string config_file)
         POLAR_FILTER_CFG.filter_type = static_cast<PolarFilterType>((int)fsSettings["polar_filter_type"]);
 
     // 导向滤波参数
-    if (POLAR_FILTER_CFG.filter_type == FILTER_GUIDED) {
+    if (POLAR_FILTER_CFG.filter_type == FILTER_MEDIAN) {
+        if (!fsSettings["polar_median_kernel_size"].empty())
+            POLAR_FILTER_CFG.median_kernel_size = (int)fsSettings["polar_median_kernel_size"];
+        if (!fsSettings["polar_median_iterations"].empty())
+            POLAR_FILTER_CFG.median_iterations = (int)fsSettings["polar_median_iterations"];
+        ROS_INFO("[PolarFP] Median filter: kernel=%d iterations=%d",
+                 POLAR_FILTER_CFG.median_kernel_size, POLAR_FILTER_CFG.median_iterations);
+    }
+    else if (POLAR_FILTER_CFG.filter_type == FILTER_GUIDED) {
         if (!fsSettings["polar_guided_radius"].empty())
             POLAR_FILTER_CFG.guided_radius = (int)fsSettings["polar_guided_radius"];
         if (!fsSettings["polar_guided_eps"].empty())

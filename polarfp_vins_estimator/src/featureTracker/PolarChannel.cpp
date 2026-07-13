@@ -25,6 +25,16 @@
 #include <vector>
 #include <algorithm>
 
+/** @brief 计算矩阵中指定百分位的数值（用于 DoP 截断去异常值） */
+double _calculatePercentile(const cv::Mat& mat, double percentile) {
+    cv::Mat flattened = mat.reshape(1, 1);
+    std::vector<double> sorted;
+    flattened.copyTo(sorted);
+    std::sort(sorted.begin(), sorted.end());
+    int index = static_cast<int>((percentile / 100.0) * (sorted.size() - 1));
+    return sorted[index];
+}
+
 /** @brief 盒滤波辅助函数，使用BORDER_REPLICATE处理边界 */
 static cv::Mat boxFilter2D(const cv::Mat& src, int radius) {
     cv::Mat dst;
@@ -156,13 +166,13 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
     cv::Mat MASK = cv::abs(S_0) < EPSILON;
     sinaop.setTo(0.0, MASK);
     cosaop.setTo(0.0, MASK);
-    dop.setTo(0.0, MASK);
+    // dop.setTo(0.0, MASK);
 
     // DoP mask：去除异常高值
     cv::Mat MASK_2 = dop > 0.999;
     sinaop.setTo(0.0, MASK_2);
     cosaop.setTo(0.0, MASK_2);
-    dop.setTo(0.0, MASK_2);
+    // dop.setTo(0.0, MASK_2);
 
     // 量化输出为 8bit 图像
     cv::Mat dop_img, sin_img, cos_img, S0_img;
@@ -171,7 +181,7 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
     cosaop.convertTo(cos_img, CV_8U, 127.5, 127.5); // cos: [-1,1] → [0,255]
     S_0.convertTo(S0_img, CV_8U);                   // S0: 直接截断
 
-    // 可选：对 DoP/sin/cos 施加导向滤波，降低低光照噪声
+    // 可选：对 DoP/sin/cos 施加滤波，降低低光照噪声
     if (cfg.filter_type == FILTER_GUIDED) {
         cv::Mat dop_f, sin_f, cos_f, s0_f;
         dop_img.convertTo(dop_f, CV_64F, 1.0 / 255.0);
@@ -186,6 +196,15 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
         dop_g.convertTo(dop_img, CV_8U, 255.0);
         sin_g.convertTo(sin_img, CV_8U, 255.0);
         cos_g.convertTo(cos_img, CV_8U, 255.0);
+    }
+    else if (cfg.filter_type == FILTER_MEDIAN) {
+        int k = cfg.median_kernel_size;
+        if (k % 2 == 0) k += 1;
+        for (int i = 0; i < cfg.median_iterations; i++) {
+            cv::medianBlur(dop_img, dop_img, k);
+            cv::medianBlur(sin_img, sin_img, k);
+            cv::medianBlur(cos_img, cos_img, k);
+        }
     }
     // 组装结果
     PolarChannelResult result;

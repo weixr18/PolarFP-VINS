@@ -61,6 +61,7 @@ struct PolarChannelResult {
  */
 enum PolarFilterType {
     FILTER_NONE = 0,
+    FILTER_MEDIAN = 1,
     FILTER_GUIDED = 2,
 };
 
@@ -73,6 +74,10 @@ enum PolarFilterType {
 struct PolarFilterConfig {
     // 滤波器类型选择
     PolarFilterType filter_type = FILTER_NONE;  ///< 滤波器类型（默认不启用）
+
+    // 中值滤波参数
+    int median_kernel_size = 3;         ///< 中值滤波核大小（必须为奇数）
+    int median_iterations = 3;          ///< 中值滤波迭代次数
 
     // 导向滤波参数
     int guided_radius = 4;              ///< 局部窗口半径（核大小 = 2*radius+1）
@@ -96,6 +101,12 @@ struct PolarFilterConfig {
  * @param cfg     滤波配置参数（默认不启用滤波）
  * @return PolarChannelResult 包含所有通道和可视化结果
  */
+
+/** DoP 百分位截断阈值（默认 99%，即去除 top 1% 的异常高值） */
+const double DOP_PERCENTILE = 99.9;
+
+/** @brief 计算矩阵中指定百分位的数值 */
+double _calculatePercentile(const cv::Mat& mat, double percentile);
 
 /** @brief 单通道导向滤波，以S0强度图为引导，在平滑噪声的同时保留边缘 */
 cv::Mat guidedFilterSingle(const cv::Mat& I, const cv::Mat& p, int r, double eps);

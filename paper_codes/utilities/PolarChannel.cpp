@@ -177,7 +177,7 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
     S1_abs.convertTo(S1_img, CV_8U);                // |S1|*scale: [0,255] → [0,255]
     S2_abs.convertTo(S2_img, CV_8U);                // |S2|*scale: [0,255] → [0,255]
 
-    // 可选：对 DoP/sin/cos 施加导向滤波，降低低光照噪声
+    // 可选：对 DoP/sin/cos 施加滤波，降低低光照噪声
     if (cfg.filter_type == FILTER_GUIDED) {
         cv::Mat dop_f, sin_f, cos_f, s0_f;
         dop_img.convertTo(dop_f, CV_64F, 1.0 / 255.0);
@@ -192,6 +192,15 @@ PolarChannelResult raw2polar(const cv::Mat& img_raw, const PolarFilterConfig& cf
         dop_g.convertTo(dop_img, CV_8U, 255.0);
         sin_g.convertTo(sin_img, CV_8U, 255.0);
         cos_g.convertTo(cos_img, CV_8U, 255.0);
+    }
+    else if (cfg.filter_type == FILTER_MEDIAN) {
+        int k = cfg.median_kernel_size;
+        if (k % 2 == 0) k += 1;
+        for (int i = 0; i < cfg.median_iterations; i++) {
+            cv::medianBlur(dop_img, dop_img, k);
+            cv::medianBlur(sin_img, sin_img, k);
+            cv::medianBlur(cos_img, cos_img, k);
+        }
     }
 
     // 组装结果

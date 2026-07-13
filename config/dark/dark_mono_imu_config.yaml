@@ -13,18 +13,22 @@ random_seed: 42
 # topic and paths
 imu_topic: "/ahrs_driver_node/imu_data"
 output_path: "/home/dhz/SLAM/output/PolarFP-VINS"
-output_name: "dark_2026-06-28-10-51-14_MI_all"
+output_name: "dark_2026-06-30-16-49-57_MI_all"
 
 ###################################################
 # 1.1 Frontend - filter params
 ###################################################
 
-# filter_type: 0=无滤波, 2=导向滤波
+# filter_type: 0=无滤波, 1=中值滤波, 2=导向滤波
 polar_filter_type: 2
 
+# 中值滤波参数 (filter_type=1 时使用)
+polar_median_kernel_size: 3   # 核大小（必须为奇数）
+polar_median_iterations: 3    # 迭代次数
+
 # 导向滤波参数 (filter_type=2 时使用)
-polar_guided_radius: 4 # guided_radius: 窗口半径（核大小 = 2*radius+1），越大越平滑
-polar_guided_eps: 0.0001 # guided_eps: 正则化参数，越大平滑越强，越小越保留细节
+polar_guided_radius: 4        # 窗口半径（核大小 = 2*radius+1）
+polar_guided_eps: 0.000001      # 正则化参数
 
 ###################################################
 # 1.2 Frontend - detector params
@@ -62,26 +66,26 @@ estimate_extrinsic: 0   # 0  Have an accurate extrinsic parameters. We will trus
 # transfer coordinates from cam to imu0 !
 
 # # qc_1(right eye) as cam0
-# image0_topic: "/arena_cam_qc1/image_raw"
-# body_T_cam0: !!opencv-matrix # T_ic
-#    rows: 4
-#    cols: 4
-#    dt: d
-#    data: [0.99997499, -0.00497565,  0.00502634,  0.01120031,
-#          -0.00505015, -0.00478453,  0.9999758,   0.0232537, 
-#          -0.00495149, -0.99997618, -0.00480954,  0.00700643,
-#           0.,          0.,          0.,          1.        ]
-
-# qc_2(left eye) as cam0
-image0_topic: "/arena_cam_qc2/image_raw"
+image0_topic: "/arena_cam_qc1/image_raw"
 body_T_cam0: !!opencv-matrix # T_ic
    rows: 4
    cols: 4
    dt: d
-   data: [0.99997566,  0.00437766, -0.00543242, -0.08807137,
-          0.00550203, -0.01604921,  0.99985606,  0.02811719,
-          0.00428984, -0.99986162, -0.01607291,  0.00748347,
+   data: [0.99997499, -0.00497565,  0.00502634,  0.01120031,
+         -0.00505015, -0.00478453,  0.9999758,   0.0232537, 
+         -0.00495149, -0.99997618, -0.00480954,  0.00700643,
           0.,          0.,          0.,          1.        ]
+
+# qc_2(left eye) as cam0
+# image0_topic: "/arena_cam_qc2/image_raw"
+# body_T_cam0: !!opencv-matrix # T_ic
+#    rows: 4
+#    cols: 4
+#    dt: d
+#    data: [0.99997566,  0.00437766, -0.00543242, -0.08807137,
+#           0.00550203, -0.01604921,  0.99985606,  0.02811719,
+#           0.00428984, -0.99986162, -0.01607291,  0.00748347,
+#           0.,          0.,          0.,          1.        ]
 
 ###################################################
 # 1.4 Frontend - other params
